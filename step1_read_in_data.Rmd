@@ -38,7 +38,7 @@ The code in chunk 3 will read in all files in this folder so do not leave old fi
 ***FINALLY*** save this markdown.  You can run it manually or run both step1 and step2 using the step0_master_processing.R script
 
 
-```{r}
+```{r packages}
 library(tidyverse)
 library(dtplyr)
 library(gt)
