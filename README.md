@@ -19,7 +19,7 @@ Option 1 Pull 5 years in one file:
 EVENTS\2S2000C #1 #2 #4 #5 #6 #11 #12 #13 #15 #28 #29 #30 #31 #32 #38 #40 #43
 
 Option 2 pull smaller time frames using "days back" starting with "S""days back" and ending with "L""days back": 
-EVENTS\2S99L0C #1 #2 4 #5 #6 #11 #12 #13 #15 #28 #29 #30 #31 #32 #38 #40 #43
+EVENTS\2S99L0C #1 #2 #4 #5 #6 #11 #12 #13 #15 #28 #29 #30 #31 #32 #38 #40 #43
 
 
 Step 2 - Open the file names "step0_MasterProcessing.Rmd" in Rstudio.  Check to make sure that all farm specific functions are set up correctly.
