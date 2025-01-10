@@ -48,14 +48,26 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 
-data/standardization_files/*.*
-data/intermediate_files/*.*
-data/qc_files/*.*
-data/event_files/*.*
-data/template_files/*.*
-data/stashed_files/*.*
+data/standardization_files/*.csv
+data/intermediate_files/*.csv
+data/qc_files/*.csv
+data/event_files/*.csv
+data/template_files/*.csv
+data/stashed_files/*.csv
 
+data/standardization_files/*.rds
+data/intermediate_files/*.rds
+data/qc_files/*.rds
+data/event_files/*.rds
+data/template_files/*.rds
+data/stashed_files/*.rds
 
+data/standardization_files/*.parquet
+data/intermediate_files/*.parquet
+data/qc_files/*.parquet
+data/event_files/*.parquet
+data/template_files/*.parquet
+data/stashed_files/*.parquet
 
 *.html
 
