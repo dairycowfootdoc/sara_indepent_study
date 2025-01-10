@@ -20,10 +20,10 @@ library(dtplyr)
 
 #read in file
 ```{r}
-events2<-read_parquet('data/intermediate_files/events_formatted.parquet')%>%
-  #filter(!(is.na(bdat)))%>% 
-  mutate(data_pull_date_min = min(date_event, na.rm = TRUE))%>%
-  mutate(data_pull_date_max = max(date_event, na.rm = TRUE))%>%
+events2<-read_parquet('data/intermediate_files/events_formatted.parquet')|>
+  #filter(!(is.na(bdat)))|> 
+  mutate(data_pull_date_min = min(date_event, na.rm = TRUE))|>
+  mutate(data_pull_date_max = max(date_event, na.rm = TRUE))|>
   rowid_to_column()
 
 ```
@@ -31,46 +31,46 @@ events2<-read_parquet('data/intermediate_files/events_formatted.parquet')%>%
 #animals events
 ```{r}
 #animals - each row is an animal------------
-animals<-events2%>%
+animals<-events2|>
   group_by(id_animal, date_birth, 
            source_farm, source_state, #optional
-           data_pull_date_min, data_pull_date_max)%>%
-  summarize(breed = paste0(sort(unique(breed)), collapse = ','))%>%
+           data_pull_date_min, data_pull_date_max)|>
+  summarize(breed = paste0(sort(unique(breed)), collapse = ','))|>
   ungroup()
 
 #enrolled - each row is an animal------------
-enrolls<-events2%>%
-  group_by(id_animal)%>%
+enrolls<-events2|>
+  group_by(id_animal)|>
   summarize(date_enrolled = min(date_event), 
-            date_enrolled_max = max(date_event))%>%
-  ungroup()%>%
-  distinct()%>%
+            date_enrolled_max = max(date_event))|>
+  ungroup()|>
+  distinct()|>
   mutate(qc_date_enrolled = as.numeric(date_enrolled_max-date_enrolled))
 
 
 #deads - each row is animal
-deads<-events2%>%
-  filter(event == 'DIED')%>%
-  group_by(id_animal)%>%
+deads<-events2|>
+  filter(event == 'DIED')|>
+  group_by(id_animal)|>
   summarize(date_died = min(date_event), 
-            date_died_max = max(date_event))%>%
-  ungroup()%>%
-  distinct()%>%
+            date_died_max = max(date_event))|>
+  ungroup()|>
+  distinct()|>
   mutate(qc_date_died_diff = as.numeric(date_died_max-date_died))
 
 #solds - each row is animal
-solds<-events2%>%
-  filter(event == 'SOLD')%>%
-  group_by(id_animal)%>%
+solds<-events2|>
+  filter(event == 'SOLD')|>
+  group_by(id_animal)|>
   summarize(date_sold = min(date_event), 
-            date_sold_max = max(date_event))%>%
-  distinct()%>%
+            date_sold_max = max(date_event))|>
+  distinct()|>
   mutate(date_sold_diff = as.numeric(date_sold_max-date_sold))
 
 #------------------------------------------------
-master_animals<-animals%>%
-  left_join(enrolls)%>%
-  left_join(solds)%>%
+master_animals<-animals|>
+  left_join(enrolls)|>
+  left_join(solds)|>
   left_join(deads)
 
 write_parquet(master_animals, 'data/intermediate_files/animals.parquet')
@@ -80,47 +80,47 @@ write_parquet(master_animals, 'data/intermediate_files/animals.parquet')
 #animal lactation events
 ```{r}
 #animal_lactations - each row is an animal/lactation----------
-animal_lactations<-events2%>%
-  group_by(id_animal, id_animal_lact, lact_number)%>%
+animal_lactations<-events2|>
+  group_by(id_animal, id_animal_lact, lact_number)|>
   summarize(date_lact_first_event = min(date_event), 
-            date_lact_last_event = max(date_event))%>%
+            date_lact_last_event = max(date_event))|>
   ungroup()
 
 #archives - each row is animal/lactation
-archives<-events2%>%
-  select(id_animal_lact, date_archived)%>%
-  distinct()%>%
-  group_by(id_animal_lact)%>%
+archives<-events2|>
+  select(id_animal_lact, date_archived)|>
+  distinct()|>
+  group_by(id_animal_lact)|>
   summarize(date_archive = min(date_archived), 
-            date_archive_max = max(date_archived))%>%
-  distinct()%>%
+            date_archive_max = max(date_archived))|>
+  distinct()|>
   mutate(date_archive_diff = as.numeric(date_archive_max-date_archive))
 
 #freshs - each row is animal/lactation------------
-freshs<-events2%>%
-  filter(event == 'FRESH')%>%
-  group_by(id_animal_lact)%>%
+freshs<-events2|>
+  filter(event == 'FRESH')|>
+  group_by(id_animal_lact)|>
   summarize(date_fresh = min(date_event), 
-            date_fresh_max = max(date_event))%>%
-  distinct()%>%
+            date_fresh_max = max(date_event))|>
+  distinct()|>
   mutate(qc_date_fresh_diff = as.numeric(date_fresh_max-date_fresh))
 
 
 
 #drys - each row is animal/lacatation
-drys<-events2%>%
-  filter(event == 'DRY')%>%
-  group_by(id_animal_lact)%>%
+drys<-events2|>
+  filter(event == 'DRY')|>
+  group_by(id_animal_lact)|>
   summarize(date_dry = min(date_event), 
-            date_dry_max = max(date_event))%>%
-  distinct()%>%
+            date_dry_max = max(date_event))|>
+  distinct()|>
   mutate(date_dry_diff = as.numeric(date_dry_max-date_dry))
 
 #master animal_lactation events-----------------
 
-master_animal_lactations<-animal_lactations%>%
-  left_join(freshs)%>%
-  left_join(drys)%>%
+master_animal_lactations<-animal_lactations|>
+  left_join(freshs)|>
+  left_join(drys)|>
   left_join(archives)
 
 write_parquet(master_animal_lactations, 'data/intermediate_files/animal_lactations.parquet')
@@ -128,42 +128,92 @@ write_parquet(master_animal_lactations, 'data/intermediate_files/animal_lactatio
 
 ```
 
+#***Insert Lag Code Here***
 
+#all health events  
+```{r}
+#
+health_animal_level<-events2|>
+  filter(event_type %in% 'health')|>
+  filter(!(is.na(id_animal)))|>
+  filter(!(is.na(event)))|>
+  arrange(id_animal, event, date_event)|>
+  group_by(id_animal, event)|>
+  mutate(event_ct_animal = 1:n(), 
+         event_ct_animal_txt = paste0(event, event_ct_animal)
+         )|>
+  ungroup()|>
+  select(id_animal, date_event,  event_ct_animal_txt)|>
+  distinct()|>
+  pivot_wider(names_from = event_ct_animal_txt, 
+              values_from = date_event)|>
+  distinct()
+
+write_parquet(health_animal_level, 'data/intermediate_files/health_events_wide.parquet')
+
+```
+
+#specific health events  
+```{r}
+select_event<-'MAST'
+#
+select_event_animal_level<-events2|>
+  filter(event %in% select_event)|>
+  filter(!(is.na(id_animal)))|>
+  filter(!(is.na(event)))|>
+  arrange(id_animal, event, date_event)|>
+  group_by(id_animal, event)|>
+  mutate(event_ct_animal = 1:n(), 
+         event_ct_animal_txt = paste0(event, event_ct_animal)
+         )|>
+  ungroup()|>
+  select(id_animal, date_event,  event_ct_animal_txt)|>
+  distinct()|>
+  pivot_wider(names_from = event_ct_animal_txt, 
+              values_from = date_event)|>
+  distinct()
+
+write_parquet(select_event_animal_level, 'data/intermediate_files/select_event_animal_level_wide.parquet')
+
+```
+
+
+```{r}
 #****Junk Code below HERE****
 
 #health events
 ```{r}
 #health events animal - each row is an animal  -------------------------
-health_animal_level<-events2%>%
-  filter(event_type %in% 'health')%>%
-  filter(!(is.na(id_animal)))%>%
-  filter(!(is.na(event)))%>%
-  arrange(id_animal, event, date)%>%
-  group_by(id_animal, event)%>%
+health_animal_level<-events2|>
+  filter(event_type %in% 'health')|>
+  filter(!(is.na(id_animal)))|>
+  filter(!(is.na(event)))|>
+  arrange(id_animal, event, date)|>
+  group_by(id_animal, event)|>
   mutate(event_ct_animal = 1:n(), 
          event_ct_animal_txt = paste0(event, event_ct_animal)
-         )%>%
-  ungroup()%>%
-  select(id_animal, date,  event_ct_animal_txt)%>%
-  distinct()%>%
+         )|>
+  ungroup()|>
+  select(id_animal, date,  event_ct_animal_txt)|>
+  distinct()|>
   pivot_wider(names_from = event_ct_animal_txt, 
-              values_from = date)%>%
+              values_from = date)|>
   distinct()
 
 write_rds(health_animal_level, 'DATA/IntermediateFiles/health_animal_level.rds')
 
 
 #health events animal_lactation - each row is animal/lactation
-health_lactation_level<-events2%>%
-  filter(event_type %in% 'health')%>%
-  arrange(id_animal_lact, event, date)%>%
-  group_by(id_animal_lact, event)%>%
+health_lactation_level<-events2|>
+  filter(event_type %in% 'health')|>
+  arrange(id_animal_lact, event, date)|>
+  group_by(id_animal_lact, event)|>
   mutate(event_ct_animal_lact = 1:n(), 
          event_ct_animal_lact_txt = paste0(event, event_ct_animal_lact) 
-         )%>%
-  ungroup()%>%
-  select(id_animal_lact, date,  event_ct_animal_lact_txt)%>%
-  distinct()%>%
+         )|>
+  ungroup()|>
+  select(id_animal_lact, date,  event_ct_animal_lact_txt)|>
+  distinct()|>
   pivot_wider(names_from = event_ct_animal_lact_txt, 
               values_from = date)
 
@@ -175,37 +225,37 @@ write_rds(health_lactation_level, 'DATA/IntermediateFiles/health_lactation_level
 #custom important events------------------------
 
 ```{r}
-arrives_pot<-events2%>%
-  filter(event == 'ARVDPOT')%>%
-  group_by(id_animal)%>%
+arrives_pot<-events2|>
+  filter(event == 'ARVDPOT')|>
+  group_by(id_animal)|>
   summarize(date_arrived_pot = min(date), 
-            date_arrived_pot_max = max(date))%>%
-  distinct()%>%
+            date_arrived_pot_max = max(date))|>
+  distinct()|>
   mutate(date_arrived_pot_diff = as.numeric(date_arrived_pot_max-date_arrived_pot))
 
 
-arrives_kdd<-events2%>%
-  filter(event == "ARVKDD")%>%
-  group_by(id_animal)%>%
+arrives_kdd<-events2|>
+  filter(event == "ARVKDD")|>
+  group_by(id_animal)|>
   summarize(date_arrived_kdd = min(date), 
-            date_arrived_kdd_max = max(date))%>%
-  distinct()%>%
+            date_arrived_kdd_max = max(date))|>
+  distinct()|>
   mutate(date_arrived_kdd_diff = as.numeric(date_arrived_kdd_max-date_arrived_kdd))
 
 
-assists<-events2%>%
-  filter(event == "ASSIST")%>%
-  group_by(id_animal)%>%
+assists<-events2|>
+  filter(event == "ASSIST")|>
+  group_by(id_animal)|>
   summarize(date_assist = min(date), 
-            date_assist_max = max(date))%>%
-  distinct()%>%
+            date_assist_max = max(date))|>
+  distinct()|>
   mutate(date_assist_diff = as.numeric(date_assist_max-date_assist))
 
 
 #-------------------------
-custom_animal_events<-animals%>%
-  left_join(arrives_pot)%>%
-  left_join(arrives_kdd)%>%
+custom_animal_events<-animals|>
+  left_join(arrives_pot)|>
+  left_join(arrives_kdd)|>
   left_join(assists)
 write_rds(custom_animal_events, 'Data/IntermediateFiles/custom_animal_events.rds')
 
