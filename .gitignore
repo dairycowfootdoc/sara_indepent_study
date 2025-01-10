@@ -47,3 +47,17 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+data/standardization_files/*.*
+data/intermediate_files/*.*
+data/qc_files/*.*
+data/event_files/*.*
+data/template_files/*.*
+data/stashed_files/*.*
+
+
+
+*.html
+
+#checkto see if push/pull is working
+
