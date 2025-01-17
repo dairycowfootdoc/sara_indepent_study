@@ -1,7 +1,7 @@
 ---
 title: "Read in Initial data"
 output: html_document
-date: "2024-08-17"
+date: "`r Sys.Date()`"
 ---
 
 ```{r setup, include=FALSE}
@@ -35,10 +35,10 @@ The code in chunk 3 will read in all files in this folder so do not leave old fi
 
 ***Next To Last*** Turn on/off (comment/un-comment) lines 128 and 131 to use custom functions for event types and source farm/state
 
-***FINALLY*** save this markdown.  You can run it manaually or run both step1 and step2 using the step0_master_processing.R script
+***FINALLY*** save this markdown.  You can run it manually or run both step1 and step2 using the step0_master_processing.R script
 
 
-```{r}
+```{r packages}
 library(tidyverse)
 library(dtplyr)
 library(gt)
@@ -52,8 +52,8 @@ source('functions/fxn_event_type.R') #custom function to identify source state b
 source('functions/fxn_location_event.R') #custom function to specify event location
 
 #set defaults ------------
-set_farm_name<-'Default Farm Name'
-set_farm_state<-'Default Farm State'
+set_farm_name<-'Test'
+set_farm_state<-'MN'
 set_location_event<-'Default Event Location'
 
 
