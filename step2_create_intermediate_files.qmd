@@ -1,8 +1,8 @@
 ---
-title: "Explore Outcomes"
-output: html_document
-date: "2024-08-17"
+title: "Step 2 Create intermediate files"
+format: html
 ---
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)

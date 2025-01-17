@@ -1,0 +1,39 @@
+---
+title: "Untitled"
+format: html
+---
+
+```{r}
+library(tidyverse)
+library(arrow)
+```
+
+animal files
+```{r}
+master_sk<-NULL
+
+list_intermediate_files<-list.files('data/intermediate_files')
+
+#i=1
+for (i in seq_along(list_intermediate_files)){
+  df<-read_parquet(paste0('data/intermediate_files/', list_intermediate_files[i]))
+  sk_df<-skimr::skim(df)%>%
+    mutate(parquet_file_name = paste0(list_intermediate_files[i]))
+  
+  master_sk<-bind_rows(sk_df, master_sk)
+}
+```
+
+```{r}
+
+select_df<-"animals.parquet" # from list_intermediate_files
+
+ggplot(master_sk%>%filter(parquet_file_name %in% select_df))+
+  geom_bar(aes(x = skim_variable, y = complete_rate, fill = skim_type), stat = 'identity')+
+  facet_wrap(parquet_file_name~.)+
+  coord_flip()
+              
+```
+
+
+

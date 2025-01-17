@@ -1,5 +1,5 @@
 library(tidyverse)
-fxn_source_farm<-function(df){
+fxn_parse_source_farm<-function(df){
   df%>%
   mutate(source_farm = str_sub(ID, 1,2))
 }
