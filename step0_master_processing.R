@@ -2,6 +2,8 @@
 library(tidyverse)
 library(rmarkdown)
 library(dtplyr)
+library(lubridate)
+library(quarto)
 
 start<-now()
 
@@ -9,13 +11,12 @@ start<-now()
 #instructions before running this master processing script
 
 ### Step 1 ----------
-rmarkdown::render(input = 'step01_read_in_data.Rmd')
-#????(input = 'step01_read_in_data.qmd')
+source('step1_read_in_data.R')
 
 
 ### Step 2 ----------------------
-rmarkdown::render(input = 'step02_create_intermediate_files.Rmd')
-#????(input = 'step01_read_in_data.qmd')
+source('step2_create_intermediate_files.R')
+
 
 end<-now()
 

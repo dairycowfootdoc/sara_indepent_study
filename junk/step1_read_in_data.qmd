@@ -50,6 +50,7 @@ library(styler)
 
 source('functions/fxn_event_type.R') #custom function to identify source state based on farm
 source('functions/fxn_location_event.R') #custom function to specify event location
+source('functions/fxn_sourcefarms.R') #custom function to specify event location
 
 #set defaults ------------
 set_farm_name<-'Default Farm Name'
