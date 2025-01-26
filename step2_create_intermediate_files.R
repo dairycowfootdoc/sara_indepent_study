@@ -10,13 +10,13 @@ source('functions/fxn_lag_master.R')
 source('functions/fxn_locate_lesion.R')
 source('functions/fxn_assign_disease.R')
 
-list_selected_events<-c('MAST') #***Modify this ***
+list_selected_events<-c('MAST' ) #***Modify this *** to be the list of events you want to explore
 
 fxn_assign_disease<-fxn_assign_disease_mastitis #***Match disease function to selected events***
 
-set_outcome_gap_animal<- 60
+set_outcome_gap_animal<- 60 #set this to be the number of days between events that would still count as the same event
 
-set_outcome_gap_lactation<- 30
+set_outcome_gap_lactation<- 30 #set this to be the number of days between events that would still count as the same event
 
 
 #read in file-----------------
@@ -152,7 +152,7 @@ events_parsed<-events_selected%>%
 
 
 
-#animal level events ---------------------
+#disease at animal level ---------------------
 
 arrange_vars <- alist(id_animal, disease, date_event) #must have a date variable, no quotes
 
@@ -212,7 +212,7 @@ disease_animal_level_wide<-disease_animal_level_long%>%
 
 
 
-#lactation level events --------------
+#disease at lactation level --------------
 
 
 
