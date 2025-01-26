@@ -277,14 +277,14 @@ disease_lactation_level_wide<-disease_lactation_level_long%>%
 
 #write out disease files------------------
 ##animal level--------------
-master_disease_animal_level_wide<-animals%>%
+master_disease_animal_level_wide<-master_animals%>%
   left_join(disease_animal_level_wide)
 
 write_parquet(master_disease_animal_level_wide, 'data/intermediate_files/disease_animal_level_wide.parquet')
 
 ##lactation level------------------------------------------
-master_disease_lactation_level_wide<-animal_lactations%>%
-  left_join(animals)%>%
+master_disease_lactation_level_wide<-master_animal_lactations%>%
+  left_join(master_animals)%>%
   left_join(disease_lactation_level_wide)
 
 write_parquet(master_disease_lactation_level_wide, 'data/intermediate_files/disease_lactation_level_wide.parquet')
