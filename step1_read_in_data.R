@@ -32,27 +32,26 @@ library(tidyverse)
 library(dtplyr)
 library(gt)
 library(arrow)
-library(lintr)
-library(styler)
+
 
 #read in functions -------------------
 source('functions/fxn_parse_free_text.R') #functions to parse remarks and protocols
-source('functions/fxn_event_type.R') #custom function to identify source state based on farm
-source('functions/fxn_location_event.R') #custom function to specify event location
+source('functions/fxn_event_type.R') #c function to categorize events
+source('functions/fxn_location.R') #custom function to specify event location
 
 #set defaults ------------
 set_farm_name<-'Default Farm Name'
 
 #set custom functions
-fxn_parse_remark<-fxn_parse_remark_default  # options: fxn_parse_remark_default, fxn_parse_remark_custom
+fxn_parse_remark<-fxn_parse_remark_default  # parse_free_text options: fxn_parse_remark_default, fxn_parse_remark_custom
 
-fxn_parse_protocols<-fxn_parse_protocols_default #options: fxn_parse_protocols_default, fxn_parse_protocols_custom
+fxn_parse_protocols<-fxn_parse_protocols_default #parse_free_text options: fxn_parse_protocols_default, fxn_parse_protocols_custom
 
-fxn_parse_location_event<-fxn_assign_location_event_default #options: fxn_assign_location_event_default, fxn_assign_location_event_custom
+fxn_assign_location_event<-fxn_assign_location_event_default #location_event options: fxn_assign_location_event_default, fxn_assign_location_event_custom
 
-fxn_event_type<-fxn_assign_event_type_default #options: fxn_assign_event_type_default, fxn_assign_event_type_custom
+fxn_event_type<-fxn_assign_event_type_default #event_type options: fxn_assign_event_type_default, fxn_assign_event_type_custom
 
-fxn_detect_location_lesion<-fxn_detect_location_lesion_default #options: fxn_detect_location_lesion_default, fxn_detect_location_lesion_custom
+fxn_detect_location_lesion<-fxn_detect_location_lesion_default #detect_location_lesion options: fxn_detect_location_lesion_default, fxn_detect_location_lesion_custom
 
 
 #read in files-----------------
@@ -110,12 +109,17 @@ mutate(dim_event = parse_number(DIM),
 mutate(protocols = str_replace_na(Protocols, 'BLANK_UNKNOWN'), 
        remark = str_replace_na(Remark, 'BLANK_UNKNOWN'),
        event = str_replace_na(Event, 'BLANK_UNKNOWN'))|>
+  
   ##add standard event types-----------------
-fxn_event_type_default()|>
-  ##add default source farm info-----------------
-fxn_add_source_farm_default()|>
+fxn_assign_event_type_default()|>
   ##add event location --------------
-fxn_add_location_event_default()|>
+fxn_assign_location_event_default()|>
+  ##parse remarks and protocols-----------------
+fxn_parse_remark()|>
+fxn_parse_protocols()|>
+  ##detect lesion location---------------------
+fxn_detect_location_lesion()|>
+  
   ##qc enrollment---------------------
 mutate(qc_diff_bdat_edat = as.numeric(date_enrolled-date_birth))
 
@@ -123,8 +127,8 @@ mutate(qc_diff_bdat_edat = as.numeric(date_enrolled-date_birth))
 
 #create event type template---------------------
 template_event_type <- events2|>
-  group_by(Event, event_type)|>
-  summarize(list_protocols = paste0(Protocols, collapse = ', '), 
+  group_by(Event,Protocols, event_type)|>
+  summarize(#list_protocols = paste0(sort(unique(Protocols)), collapse = ', '), 
             count_rows = sum(n()))|>
   ungroup()
 
@@ -138,41 +142,20 @@ template_event_type <- events2|>
   ungroup()
 
 write_parquet(template_event_type, 'data/template_files/template_event_details.parquet')
+write_csv(template_event_type, 'data/template_files/template_event_details.csv')
 
 #add custom variables (optional)
 #define event types------------------------------------
 events2 <-events2|>
-  
-  #standardize event type--------------------
-#fxn_event_type_custom()|> # turn this off or on, you must modify this function in the function file
-
-#add source farm ------------------
-#fxn_add_source_farm_custom() |> # turn this off or on, you must modify this function in the function file
-
-#add event location ------------------
-#fxn_assign_location_custom() |> # turn this off or on, you must modify this function in the function file
-
 #fix na values-------------
-mutate(
-  event_type = case_when(
-    is.na(event_type)~'Unknown',
-    TRUE~event_type), 
-  source_farm = case_when(
-    is.na(source_farm)~'Unknown', 
-    TRUE~source_farm), 
-  source_state = case_when(
-    is.na(source_state)~'Unknown', 
-    TRUE~source_state),
-  breed = case_when(
-    is.na(breed)~'Unknown', 
-    TRUE~breed),
-  technician = case_when(
-    is.na(Technician)~'Unknown', 
-    TRUE~Technician),
-  eid = case_when(
-    is.na(EID)~'Unknown', 
-    TRUE~EID)
-)|>
+mutate(technician = Technician, 
+       eid = EID)|> 
+  
+  mutate(across(
+    .cols = c(event_type, breed, location_event, locate_lesion, technician, eid), 
+    ~replace_na(., "Unknown")
+  ))|>
+  
   # create lactation groups ---------------------intentionally not a function so it is obvious...but could make it a function
   mutate(
     lact_group_basic = case_when(
@@ -203,11 +186,12 @@ write_parquet(events2, 'data/intermediate_files/events_all_columns.parquet') # t
 
 # formatted file -----------------------
 write_parquet(events2%>%
-                select(source_file_path, source_farm, source_state, 
+                select(source_file_path, 
                        id_animal, date_birth, breed, eid, date_enrolled, qc_diff_bdat_edat,
                        id_animal_lact, date_archived, 
                        lact_number, lact_group_basic, lact_group, lact_group_repro,
-                       event_type, event, remark, protocols, technician, date_event, dim_event, location_event,
+                       event_type, event, remark, contains('remark'), protocols, contains('protocols'), 
+                       technician, date_event, dim_event, location_event, locate_lesion, 
                        R, `T`, B, date_heat, date_concieved, date_aborted, date_repro_dx
                 ), 'data/intermediate_files/events_formatted.parquet')
 
@@ -231,12 +215,7 @@ qc_event_type<-events2|>
 
 write_parquet(qc_event_type, 'data/qc_files/qc_event_type.parquet')
 
-qc_source_farm<-events2|>
-  filter(source_farm %in% 'Unknown')|>
-  group_by(Event, Protocols, source_farm)|>
-  summarize(count = sum(n()))|>
-  ungroup()
-write_parquet(qc_source_farm, 'data/qc_files/qc_source_farm.parquet')
+
 
 
 

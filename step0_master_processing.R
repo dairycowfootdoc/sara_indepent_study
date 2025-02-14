@@ -10,11 +10,10 @@ start<-now()
 #***IMPORTANT*** make sure you have opened the 'step1_ReadInDate.Rmd' file and completed the set up 
 #instructions before running this master processing script
 
+
 ### Step 1 Read in data----------
 source('step1_read_in_data.R')
 
-#add custom location function (event location)
-source('step1.1_event_location.R')
 
 
 

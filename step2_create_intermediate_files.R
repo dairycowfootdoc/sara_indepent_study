@@ -8,11 +8,17 @@ library(dtplyr)
 
 source('functions/fxn_lag_master.R')
 source('functions/fxn_locate_lesion.R')
-source('functions/fxn_assign_disease.R')
 
-list_selected_events<-c('MAST' ) #***Modify this *** to be the list of events you want to explore
+source('functions/fxn_disease.R')
+source('functions/fxn_treatment.R')
 
-fxn_assign_disease<-fxn_assign_disease_mastitis #***Match disease function to selected events***
+source('functions/fxn_parse_free_text.R') #functions to parse remarks and protocols
+source('functions/fxn_location.R') #custom function to specify event location
+
+list_selected_events<-c('BRED' ) #***Modify this *** to be the list of events you want to explore
+
+fxn_assign_disease<-fxn_assign_disease_template #***Match disease function to selected events***
+fxn_assign_treatment<-fxn_assign_treatment_template #***Match treatment function to selected events***
 
 set_outcome_gap_animal<- 60 #set this to be the number of days between events that would still count as the same event
 
@@ -34,7 +40,7 @@ events_formatted<-read_parquet('data/intermediate_files/events_formatted.parquet
 ##animals - each row is an animal------------
 animals<-events_formatted|>
   group_by(id_animal, date_birth, 
-           source_farm, source_state, #optional
+           #source_farm, source_state, #optional
            data_pull_date_min, data_pull_date_max)|>
   summarize(breed = paste0(sort(unique(breed)), collapse = ','))|>
   ungroup()
@@ -142,10 +148,10 @@ events_selected<-events_formatted%>%
 
 
 events_parsed<-events_selected%>%
-  fxn_locate_lesion()%>% #creates lesion location variable, function can be customized
-  fxn_assign_disease() #creates disease variable, function can be customized
-
-
+  fxn_assign_disease()%>% #creates disease variable, function can be customized
+  fxn_assign_treatment()%>% #creates treatment variable, function can be customized
+  mutate(across(.cols = c(disease, treatment), 
+                .fns = ~str_replace_na(.x, 'Unknown') )) #removes NA from disease and treatment variables
 
 
 
@@ -160,7 +166,7 @@ sort_vars <- c('id_animal',  'disease') #does NOT have a date variable, must hav
 
 ##Gap1 ----------------------
 
-set_outcome_gap_animal<- 1
+#set_outcome_gap_animal<- 1
 
 selected_animal_level_events_assign_gap<-test_fxn1(x = events_parsed%>%
                                                      mutate(date = date_event),
@@ -187,11 +193,13 @@ disease_animal_level_long<-selected_animal_level_events_assign_gap%>%
             list_events = paste0(event, collapse = ','), 
             list_remarks = paste0(remark, collapse = ','), 
             list_protocols = paste0(protocols, collapse = ','), 
+            list_treatments = paste0(treatment , collapse = ','),
             list_locate_lesion = paste0(locate_lesion, collapse = ','), 
             list_events_simple = paste0(sort(unique(event)), collapse = ','), 
             list_remarks_simple = paste0(sort(unique(remark)), collapse = ','), 
             list_protocols_simple = paste0(sort(unique(protocols)), collapse = ','), 
-            list_locate_lesion_simple = paste0(sort(unique(locate_lesion)), collapse = ','))%>%
+            list_locate_lesion_simple = paste0(sort(unique(locate_lesion)), collapse = ',')
+            )%>%
   ungroup()
 
 write_parquet(disease_animal_level_long, 'data/intermediate_files/disease_animal_level_long.parquet')
