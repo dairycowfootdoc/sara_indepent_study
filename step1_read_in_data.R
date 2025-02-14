@@ -35,20 +35,24 @@ library(arrow)
 library(lintr)
 library(styler)
 
-#custom functions, turn off or on  on line 124 and 126
-
+#read in functions -------------------
+source('functions/fxn_parse_free_text.R') #functions to parse remarks and protocols
 source('functions/fxn_event_type.R') #custom function to identify source state based on farm
 source('functions/fxn_location_event.R') #custom function to specify event location
-source('functions/fxn_sourcefarms.R') #custom function to specify event location
 
 #set defaults ------------
 set_farm_name<-'Default Farm Name'
-set_farm_state<-'Default Farm State'
-set_location_event<-'Default Event Location'
 
+#set custom functions
+fxn_parse_remark<-fxn_parse_remark_default  # options: fxn_parse_remark_default, fxn_parse_remark_custom
 
+fxn_parse_protocols<-fxn_parse_protocols_default #options: fxn_parse_protocols_default, fxn_parse_protocols_custom
 
+fxn_parse_location_event<-fxn_assign_location_event_default #options: fxn_assign_location_event_default, fxn_assign_location_event_custom
 
+fxn_event_type<-fxn_assign_event_type_default #options: fxn_assign_event_type_default, fxn_assign_event_type_custom
+
+fxn_detect_location_lesion<-fxn_detect_location_lesion_default #options: fxn_detect_location_lesion_default, fxn_detect_location_lesion_custom
 
 
 #read in files-----------------
@@ -76,11 +80,11 @@ for (i in seq_along(list_files)){
 #initial cleanup ---------------------------
 events2<-events|>
   select(-starts_with('...'))|> #get rid of extra columns created by odd parsing in the original csv file
-  #create unique cow id--------------------------------------- 
+  ##create unique cow id--------------------------------------- 
 mutate(id_animal = paste0(ID, '_', BDAT), 
        id_animal_lact = paste0(ID, '_', BDAT, '_', LACT), 
        breed = CBRD)|>
-  #format dates--------------------------------------- 
+  ##format dates--------------------------------------- 
 mutate(date_event = lubridate::mdy(Date), 
        
        date_birth = lubridate::mdy(BDAT), 
@@ -97,35 +101,43 @@ mutate(date_event = lubridate::mdy(Date),
        date_repro_dx = lubridate::mdy(PODAT) #unnecessary to pull
        
 )|>
-  #parse numbers -------------------
+  ##parse numbers -------------------
 mutate(dim_event = parse_number(DIM), 
        lact_number = parse_number(LACT))|>
   arrange(id_animal, date_event)|>
   distinct()|>
-  #replace missing values in remark and protocols to allow grouping later----------------
+  ##replace missing values in remark and protocols to allow grouping later----------------
 mutate(protocols = str_replace_na(Protocols, 'BLANK_UNKNOWN'), 
        remark = str_replace_na(Remark, 'BLANK_UNKNOWN'),
        event = str_replace_na(Event, 'BLANK_UNKNOWN'))|>
-  #add standard event types-----------------
+  ##add standard event types-----------------
 fxn_event_type_default()|>
-  #add default source farm info-----------------
+  ##add default source farm info-----------------
 fxn_add_source_farm_default()|>
-  #add event location --------------
+  ##add event location --------------
 fxn_add_location_event_default()|>
-  #qc enrollment---------------------
+  ##qc enrollment---------------------
 mutate(qc_diff_bdat_edat = as.numeric(date_enrolled-date_birth))
 
 
 
 #create event type template---------------------
 template_event_type <- events2|>
-  group_by(Event, Protocols, event_type)|>
-  summarize(count = sum(n()))|>
+  group_by(Event, event_type)|>
+  summarize(list_protocols = paste0(Protocols, collapse = ', '), 
+            count_rows = sum(n()))|>
   ungroup()
 
 write_csv(template_event_type, 'data/template_files/template_event_type.csv') #this is intentionally a csv because it is a template to be edited
 
+#create event details template---------------------
+template_event_type <- events2|>
+  group_by(Event, Remark, Protocols, event_type)|>
+  summarize(
+            count_rows = sum(n()))|>
+  ungroup()
 
+write_parquet(template_event_type, 'data/template_files/template_event_details.parquet')
 
 #add custom variables (optional)
 #define event types------------------------------------
