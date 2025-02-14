@@ -77,14 +77,15 @@ for (i in seq_along(list_files)){
 
 
 #initial cleanup ---------------------------
-events2<-events|>
-  select(-starts_with('...'))|> #get rid of extra columns created by odd parsing in the original csv file
+events2 <- events|>
+  lazy_dt() |> 
+  select(-starts_with('...')) |> #get rid of extra columns created by odd parsing in the original csv file
   ##create unique cow id--------------------------------------- 
-mutate(id_animal = paste0(ID, '_', BDAT), 
+  mutate(id_animal = paste0(ID, '_', BDAT), 
        id_animal_lact = paste0(ID, '_', BDAT, '_', LACT), 
        breed = CBRD)|>
   ##format dates--------------------------------------- 
-mutate(date_event = lubridate::mdy(Date), 
+  mutate(date_event = lubridate::mdy(Date), 
        
        date_birth = lubridate::mdy(BDAT), 
        
@@ -98,30 +99,32 @@ mutate(date_event = lubridate::mdy(Date),
        date_concieved = lubridate::mdy(CDAT), #unnecessary to pull
        date_aborted = lubridate::mdy(ABDAT), #unnecessary to pull
        date_repro_dx = lubridate::mdy(PODAT) #unnecessary to pull
-       
-)|>
+       )|>
   ##parse numbers -------------------
-mutate(dim_event = parse_number(DIM), 
+  mutate(dim_event = parse_number(DIM), 
        lact_number = parse_number(LACT))|>
   arrange(id_animal, date_event)|>
-  distinct()|>
+  # dedups to get but ignores source file
+  distinct(across(-c(source_file_path)),
+           .keep_all = TRUE)|>
   ##replace missing values in remark and protocols to allow grouping later----------------
   mutate(protocols = str_replace_na(Protocols, 'BLANK_UNKNOWN'), 
        remark = str_replace_na(Remark, 'BLANK_UNKNOWN'),
        event = str_replace_na(Event, 'BLANK_UNKNOWN'))|>
   
   ##add standard event types-----------------
-fxn_assign_event_type_default()|>
+  fxn_assign_event_type_default()|>
   ##add event location --------------
-fxn_assign_location_event_default()|>
+  fxn_assign_location_event_default()|>
   ##parse remarks and protocols-----------------
-fxn_parse_remark()|>
+  fxn_parse_remark()|>
   fxn_parse_protocols()|>
   ##detect lesion location---------------------
-fxn_detect_location_lesion()|>
-  
-  ##qc enrollment---------------------
-mutate(qc_diff_bdat_edat = as.numeric(date_enrolled-date_birth))
+  fxn_detect_location_lesion()|>
+    ##qc enrollment---------------------
+  mutate(qc_diff_bdat_edat = as.numeric(date_enrolled-date_birth)
+         ) |> 
+  as_tibble()
 
 
 

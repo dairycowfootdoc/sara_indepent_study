@@ -187,6 +187,7 @@ n_distinct(selected_animal_level_events_assign_gap$gap1_key) #for testing
 
 ##create long format disease--------------
 disease_animal_level_long<-selected_animal_level_events_assign_gap%>%
+  lazy_dt() |> 
   group_by(id_animal, disease, gap1_key)%>%
   summarize(date_disease_first = min(date_event), 
             date_disease_last = max(date_event), 
@@ -200,7 +201,8 @@ disease_animal_level_long<-selected_animal_level_events_assign_gap%>%
             list_protocols_simple = paste0(sort(unique(protocols)), collapse = ','), 
             list_locate_lesion_simple = paste0(sort(unique(locate_lesion)), collapse = ',')
             )%>%
-  ungroup()
+  ungroup() |> 
+  as_tibble()
 
 write_parquet(disease_animal_level_long, 'data/intermediate_files/disease_animal_level_long.parquet')
 
@@ -251,6 +253,7 @@ n_distinct(selected_lactation_level_events_assign_gap$gap1_key) #for testing
 
 ##create long format disease---------------
 disease_lactation_level_long<-selected_lactation_level_events_assign_gap%>%
+  lazy_dt() |> 
   group_by(id_animal, id_animal_lact, disease, gap1_key)%>%
   summarize(date_disease_first = min(date_event), 
             date_disease_last = max(date_event), 
@@ -263,7 +266,8 @@ disease_lactation_level_long<-selected_lactation_level_events_assign_gap%>%
             list_remarks_simple = paste0(sort(unique(remark)), collapse = ','), 
             list_protocols_simple = paste0(sort(unique(protocols)), collapse = ','), 
             list_locate_lesion_simple = paste0(sort(unique(locate_lesion)), collapse = ','))%>%
-  ungroup()
+  ungroup() |> 
+  as_tibble()
 
 write_parquet(disease_lactation_level_long, 'data/intermediate_files/disease_lactation_level_long.parquet')
 
