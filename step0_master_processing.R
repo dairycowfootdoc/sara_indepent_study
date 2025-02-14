@@ -17,7 +17,7 @@ source('step2_create_intermediate_files.R')
 
 ### Step 3 Report Templates------------------------
 #add basic report templates
-quarto::quarto_render('step3_report_templates.qmd')
+quarto::quarto_render('explore_event_types.qmd')
 #cohort disease incidence (Location, Lactation, Breed, etc)
 #timing of disease (DIM (or Age) and calendar time distributions, Kaplan Meier)
 #perfomrance and disease (milk, gain, repro)
