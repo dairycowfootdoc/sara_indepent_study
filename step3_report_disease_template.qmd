@@ -1,0 +1,46 @@
+---
+title: "Disease Template"
+format: html
+editor: source
+---
+
+```{r}
+library(tidyverse)
+library(arrow)
+library(dtplyr)
+
+source('functions/DT_base.R')
+
+```
+
+```{r}
+animals<-read_parquet('data/intermediate_files/animals.parquet') #each row is an animal
+animal_lactations<-read_parquet('data/intermediate_files/animal_lactations.parquet') #each row is an animal lactation
+
+disease_animal_long<-read_parquet('data/intermediate_files/disease_animal_level_long.parquet')
+disease_animal_wide<-read_parquet('data/intermediate_files/disease_animal_level_wide.parquet')
+
+disease_lact_long<-read_parquet('data/intermediate_files/disease_lactation_level_long.parquet')
+disease_lact_wide<-read_parquet('data/intermediate_files/disease_lactation_level_wide.parquet')
+
+```
+
+
+## Disease incidence over time
+
+### Calander Time
+```{r}
+
+
+
+```
+
+### Phase Time (days in milk)
+```{r}
+
+
+
+```
+
+
+
