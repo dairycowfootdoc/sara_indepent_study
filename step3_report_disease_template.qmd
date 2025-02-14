@@ -27,13 +27,27 @@ disease_lact_wide<-read_parquet('data/intermediate_files/disease_lactation_level
 
 ## Eiligibility
 ```{r}
-date_list<-seq.Date(from = as.Date('2020-01-01'), to = as.Date('2020-12-31'), by = 'day')
+
+calander<-tibble(
+  calander_date = seq.Date(from = min(disease_lact_long$date_disease_first), 
+                           to = max(disease_lact_long$date_disease_last), 
+                           by = 'day')
+)
 
 vwp = 75
 
 eligible<-animal_lactations%>%
-  mutate(elig_start = fresh_date + days(vwp),
-         elig_end = fresh_date + days(200))
+  left_joint(animals)%>%
+  mutate(date_end_elig_to_breed = date_fresh)%>%
+  mutate(elig_start = date_fresh + days(vwp),
+         elig_end = case_when(
+           is.na(date_died)<1~date_died,
+           is.na(date_sold)<1~date_sold,
+           is.na(date_dnb)<1~date_dnb,
+           TRUE~date_fresh +days(200)
+         ))
+
+
 
 ```
 
