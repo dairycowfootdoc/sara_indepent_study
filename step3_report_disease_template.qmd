@@ -14,30 +14,124 @@ source('functions/DT_base.R')
 ```
 
 ```{r}
+#denominator base files -------------------
 animals<-read_parquet('data/intermediate_files/animals.parquet') #each row is an animal
+
 animal_lactations<-read_parquet('data/intermediate_files/animal_lactations.parquet') #each row is an animal lactation
 
+#numerator base files long ----------------------each row is a unique disease event (gapx_key)
 disease_animal_long<-read_parquet('data/intermediate_files/disease_animal_level_long.parquet')
-disease_animal_wide<-read_parquet('data/intermediate_files/disease_animal_level_wide.parquet')
 
 disease_lact_long<-read_parquet('data/intermediate_files/disease_lactation_level_long.parquet')
+
+#numerator base files long ---------each row is a an animal or animal lact with diseases in wide format
+disease_animal_wide<-read_parquet('data/intermediate_files/disease_animal_level_wide.parquet')
+
 disease_lact_wide<-read_parquet('data/intermediate_files/disease_lactation_level_wide.parquet')
+
 
 ```
 
-## Eiligibility
+## Disease Discriptions
+
+### Distribution of Disease Event within Phase (Lactation) - DIM at disease event
+
 ```{r}
 
+ggplot(disease_lact_long%>%
+         mutate(floordate_year = factor(floor_date(date_disease_first, unit = 'year'))))+
+  geom_density(aes(x = dim_disease_first,  color = floordate_year, group = floordate_year))+
+  theme_bw()+
+  coord_cartesian(xlim = c(0, 305))
+
+```
+
+### Disease Duration
+
+```{r}
+
+duration<-disease_lact_long%>%
+  mutate(disease_duration = as.numeric(date_disease_last - date_disease_first))%>%
+         mutate(floordate_season = factor(floor_date(date_disease_first, unit = 'season')))
+
+ggplot(duration%>%filter(disease_count == 1))+
+  geom_point(aes(x = floordate_season,  y = disease_duration), position = position_jitter(), size = .1)+
+  geom_violin(aes(x = floordate_season,  y = disease_duration), fill = 'grey', scale = 'width')+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+## Denominator - use phase distribution
+
+### Calander Time
+```{r}
 calander<-tibble(
   calander_date = seq.Date(from = min(disease_lact_long$date_disease_first), 
                            to = max(disease_lact_long$date_disease_last), 
                            by = 'day')
 )
+```
 
-vwp = 75
 
-eligible<-animal_lactations%>%
-  left_joint(animals)%>%
+### Animals Eligilble
+
+```{r}
+animal_lactation_summary<-animal_lactations%>%
+  group_by(id_animal)%>%
+  mutate(date_fresh_min = min(date_fresh, na.rm = T), 
+         date_archive_min = min(date_archive, na.rm = T))%>%
+  ungroup()%>%
+  select(id_animal, date_fresh_min, contains('pull'))
+
+deno_cow<-animals%>%
+              mutate(date_left = case_when(
+                (is.na(date_died)<1)~date_died,
+                (is.na(date_sold)<1)~date_sold,
+                TRUE~lubridate::mdy(NA))
+                )%>%
+  left_join(lact2)%>%
+  mutate(
+    date_start = case_when(
+    is.na(date_fresh_min)~data_pull_date_min,
+    TRUE~date_fresh_min), 
+    
+     date_end = case_when(
+       is.na(date_left)~data_pull_date_max,
+       TRUE~date_left)
+  )
+
+list_dates<-sort(unique(calander$calander_date))
+master_deno<-NULL
+#i=1
+for (i in seq_along(list_dates)){
+  deno_cow2<-deno_cow%>%
+    #lazy_dt()%>%
+    mutate(ref_date = list_dates[i])%>%
+    mutate(ct_day = case_when(
+      (ref_date>date_start)&(ref_date<date_end)~1,
+      TRUE~0)
+      )%>%
+    group_by(ref_date)%>%
+      summarize(animal_count = sum(ct_day))%>%
+      ungroup()#%>%
+    #as_tibble()
+  
+  
+  master_deno<-bind_rows(master_deno, deno_cow2)
+}
+
+deno_by_month = master_deno%>%
+  mutate(floordate_month = floor_date(ref_date, 'month'))%>%
+  group_by(floordate_month)%>%
+  summarize(ct_animals = mean(animal_count))%>%
+  ungroup()
+            
+            
+            
+eligible_cow<-animal_lactations%>%
+  left_join(animals)%>%
   mutate(date_end_elig_to_breed = date_fresh)%>%
   mutate(elig_start = date_fresh + days(vwp),
          elig_end = case_when(
