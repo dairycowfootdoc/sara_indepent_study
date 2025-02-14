@@ -1,7 +1,15 @@
 ---
 title: "Explore Events"
-format: html
 editor: source
+format: 
+ html:
+   embed-resources: true
+   toc: true
+   toc-location: left
+execute:
+    echo: false
+    message: false
+    warning: false
 ---
 
 ```{r}
@@ -23,12 +31,37 @@ summarize_events<-events_formatted |>
 
 ```
 
+# Summary Graph
 ```{r}
-ggplot(summarize_events)+
-  geom_bar(aes(x = event, y = count_rows, fill = event_type), stat = "identity")+
-  facet_wrap(event_type~., scales = 'free')+
-  coord_flip()
+#| fig-height: 8
+# count y vars
+
+facet_order <- summarize_events %>%
+  group_by(event_type) %>%
+  summarise(n_y = n_distinct(event)) %>%
+  arrange(desc(n_y)) %>%  # Order by most y categories
+  pull(event_type)
+
+# order events
+summarize_events <- summarize_events %>%
+  mutate(event = fct_reorder(event, count_rows, .fun = sum, .desc = FALSE)) 
+
+  ggplot(summarize_events)+
+  geom_bar(aes(x = event,
+               y = count_rows, fill = event_type), stat = "identity")+
+  facet_wrap(factor(event_type, levels = facet_order) ~., scales = 'free')+
+  coord_flip()+
+  scale_fill_viridis_d()+
+  theme_minimal()+
+  labs(x = "",
+       y = "Row Count")+
+  theme(legend.position = "none",
+        # axis.text.y = element_text(size = 6)
+        )
 ```
+
+# Table of events
+
 ```{r}
 fxn_DT_base(summarize_events)
 ```
