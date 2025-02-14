@@ -25,8 +25,21 @@ disease_lact_wide<-read_parquet('data/intermediate_files/disease_lactation_level
 
 ```
 
+## Eiligibility
+```{r}
+date_list<-seq.Date(from = as.Date('2020-01-01'), to = as.Date('2020-12-31'), by = 'day')
 
-## Disease incidence over time
+vwp = 75
+
+eligible<-animal_lactations%>%
+  mutate(elig_start = fresh_date + days(vwp),
+         elig_end = fresh_date + days(200))
+
+```
+
+
+
+## 
 
 ### Calander Time
 ```{r}
