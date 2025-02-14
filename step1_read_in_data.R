@@ -43,7 +43,7 @@ source('functions/fxn_location.R') #custom function to specify event location
 set_farm_name<-'Default Farm Name'
 
 #set custom functions
-fxn_parse_remark<-fxn_parse_remark_default  # parse_free_text options: fxn_parse_remark_default, fxn_parse_remark_custom
+fxn_parse_remark<-fxn_parse_remark_default # parse_free_text options: fxn_parse_remark_default, fxn_parse_remark_custom
 
 fxn_parse_protocols<-fxn_parse_protocols_default #parse_free_text options: fxn_parse_protocols_default, fxn_parse_protocols_custom
 
@@ -220,7 +220,8 @@ write_parquet(qc_event_type, 'data/qc_files/qc_event_type.parquet')
 
 
 
-
+test<-events2%>%
+  select(contains('remark'), Event, Remark)
 
 
 
