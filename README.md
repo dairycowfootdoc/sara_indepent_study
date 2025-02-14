@@ -1,9 +1,3 @@
----
-editor_options: 
-  markdown: 
-    wrap: 72
----
-
 # DairyEventBasics - single herd management file
 
 The goal of this is to streamline initial data processing so that more
