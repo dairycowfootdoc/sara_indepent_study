@@ -5,13 +5,13 @@
 #***FIRST*** Be sure to set up your farm name and state name on lines 51 and 52 if you are not going to customize the functions to set these.
 
 #***NEXT*** Pull events from dairy comp using this code:
-  
+
 #  Option 1 Pull 5 years in one file: EVENTS\2S2000C #1 #2 #4 #5 #6 #11 #12 #13 #15 #28 #29 #30 #31 #32 #38 #40 #43
 
 #Option 2 pull smaller time frames using "days back" starting with "S""days back" and ending with "L""days back":  EVENTS\2S99L0C #1 #2 #4 #5 #6 #11 #12 #13 #15 #28 #29 #30 #31 #32 #38 #40 #43
 
 #This code pulls the following items:
-  
+
 #  "ID" "PEN" "REG" "EID" "CBRD" "BDAT" "EDAT" "LACT" "RC" "HDAT" "FDAT" "CDAT" "DDAT" "PODAT" "ABDAT" "VDAT"   "ARDAT" 
 
 #"Event" "DIM" "Date" "Remark" "Protocols" "R" "T" "B"  "Technician"
@@ -106,7 +106,7 @@ mutate(dim_event = parse_number(DIM),
   arrange(id_animal, date_event)|>
   distinct()|>
   ##replace missing values in remark and protocols to allow grouping later----------------
-mutate(protocols = str_replace_na(Protocols, 'BLANK_UNKNOWN'), 
+  mutate(protocols = str_replace_na(Protocols, 'BLANK_UNKNOWN'), 
        remark = str_replace_na(Remark, 'BLANK_UNKNOWN'),
        event = str_replace_na(Event, 'BLANK_UNKNOWN'))|>
   
@@ -116,7 +116,7 @@ fxn_assign_event_type_default()|>
 fxn_assign_location_event_default()|>
   ##parse remarks and protocols-----------------
 fxn_parse_remark()|>
-fxn_parse_protocols()|>
+  fxn_parse_protocols()|>
   ##detect lesion location---------------------
 fxn_detect_location_lesion()|>
   
@@ -129,7 +129,7 @@ mutate(qc_diff_bdat_edat = as.numeric(date_enrolled-date_birth))
 template_event_type <- events2|>
   group_by(Event,Protocols, event_type)|>
   summarize(#list_protocols = paste0(sort(unique(Protocols)), collapse = ', '), 
-            count_rows = sum(n()))|>
+    count_rows = sum(n()))|>
   ungroup()
 
 write_csv(template_event_type, 'data/template_files/template_event_type.csv') #this is intentionally a csv because it is a template to be edited
@@ -138,7 +138,7 @@ write_csv(template_event_type, 'data/template_files/template_event_type.csv') #t
 template_event_type <- events2|>
   group_by(Event, Remark, Protocols, event_type)|>
   summarize(
-            count_rows = sum(n()))|>
+    count_rows = sum(n()))|>
   ungroup()
 
 write_parquet(template_event_type, 'data/template_files/template_event_details.parquet')
@@ -147,7 +147,7 @@ write_csv(template_event_type, 'data/template_files/template_event_details.csv')
 #add custom variables (optional)
 #define event types------------------------------------
 events2 <-events2|>
-#fix na values-------------
+  #fix na values-------------
 mutate(technician = Technician, 
        eid = EID)|> 
   
