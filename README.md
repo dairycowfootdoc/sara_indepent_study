@@ -24,11 +24,11 @@ Step 1 - Pull the data and save in the **event_files folder**
 
 -   Pull events from dairy comp using one option from the code below.
 
--   Option 1 Pull 5 years in one file: EVENTS\\2S2000C #1 #2 #4 #5 #6
+-   Option 1 Pull 5 years in one file: EVENTS\\2S2000CH #1 #2 #4 #5 #6
     #11 #12 #13 #15 #28 #29 #30 #31 #32 #38 #40 #43
 
 Option 2 pull smaller time frames using "days back" starting with
-"S""days back" and ending with "L""days back": EVENTS\\2S99L0C #1 #2 #4
+"S""days back" and ending with "L""days back": EVENTS\\2S99L0CH #1 #2 #4
 #5 #6 #11 #12 #13 #15 #28 #29 #30 #31 #32 #38 #40 #43
 
 Step 2 - Open the file names "step0_MasterProcessing.Rmd" in Rstudio.
