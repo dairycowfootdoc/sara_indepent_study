@@ -17,8 +17,8 @@ source('functions/fxn_location.R') #custom function to specify event location
 
 list_selected_events<-c('BRED' ) #***Modify this *** to be the list of events you want to explore
 
-fxn_assign_disease<-fxn_assign_disease_template #***Match disease function to selected events***
-fxn_assign_treatment<-fxn_assign_treatment_template #***Match treatment function to selected events***
+fxn_assign_disease<-fxn_assign_disease_bred #***Match disease function to selected events***
+fxn_assign_treatment<-fxn_assign_treatment_bred #***Match treatment function to selected events***
 
 set_outcome_gap_animal<- 60 #set this to be the number of days between events that would still count as the same event
 
@@ -257,6 +257,7 @@ disease_lactation_level_long<-selected_lactation_level_events_assign_gap%>%
             list_events = paste0(event, collapse = ','), 
             list_remarks = paste0(remark, collapse = ','), 
             list_protocols = paste0(protocols, collapse = ','), 
+            list_treatments = paste0(treatment, collapse = ','), 
             list_locate_lesion = paste0(locate_lesion, collapse = ','), 
             list_events_simple = paste0(sort(unique(event)), collapse = ','), 
             list_remarks_simple = paste0(sort(unique(remark)), collapse = ','), 
