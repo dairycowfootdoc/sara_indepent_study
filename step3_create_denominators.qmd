@@ -1,0 +1,217 @@
+---
+title: "Disease Template"
+format: html
+editor: source
+---
+
+```{r}
+library(tidyverse)
+library(arrow)
+library(dtplyr)
+
+source('functions/DT_base.R')
+
+```
+
+```{r}
+#denominator base files -------------------
+animals<-read_parquet('data/intermediate_files/animals.parquet') #each row is an animal
+
+animal_lactations<-read_parquet('data/intermediate_files/animal_lactations.parquet') #each row is an animal lactation
+
+#numerator base files long ----------------------each row is a unique disease event (gapx_key)
+disease_animal_long<-read_parquet('data/intermediate_files/disease_animal_level_long.parquet')
+
+disease_lact_long<-read_parquet('data/intermediate_files/disease_lactation_level_long.parquet')
+
+#numerator base files long ---------each row is a an animal or animal lact with diseases in wide format
+disease_animal_wide<-read_parquet('data/intermediate_files/disease_animal_level_wide.parquet')
+
+disease_lact_wide<-read_parquet('data/intermediate_files/disease_lactation_level_wide.parquet')
+
+#---------------------------
+data_pull_min<-min(animals$data_pull_date_min)
+data_pull_max<-max(animals$data_pull_date_max)
+```
+
+
+## Denominator - use phase distribution
+
+### Calander Time
+```{r}
+calander<-tibble(
+  calander_date = seq.Date(from = max(disease_lact_long$date_disease_last)-(365*3), 
+                           to = max(disease_lact_long$date_disease_last), 
+                           by = 'day')
+)
+```
+
+
+### Animal Level
+
+```{r}
+#get dates for exligibility logic based on milking or not-------------
+animal_lactation_summary<-animal_lactations%>%
+  group_by(id_animal)%>%
+  summarize(date_start_milking = min(date_fresh, na.rm = T), 
+         max_lactation_number = max(lact_number), 
+         min_lactation_number = min(lact_number))%>%
+  ungroup()
+
+#create a cow level base file------------
+deno_cow<-animals%>%
+  left_join(animal_lactation_summary)#%>%
+  #head()
+  #filter(id_animal %in% c('1008_11/07/18')) #for testing, turn off for normal processing
+
+#create a lactation level base file ------------------------------
+deno_lact<-animal_lactations%>%
+  left_join(animal_lactation_summary)%>%
+  left_join(animals)
+
+```
+
+### Establish eligibility logic
+
+```{r}
+elig_age_days_min<-0
+elig_age_days_max<-365*15 #15 yr old cows max
+
+elig_dim_min<-0
+elig_dim_max<-400
+
+
+
+```
+
+### Create Denominators
+
+#### Cow level 
+```{r, message = false}
+
+list_dates<-sort(unique(calander$calander_date))
+master_deno_cow<-NULL
+
+#i=1000
+for (i in seq_along(list_dates)){
+  deno_cow2<-deno_cow%>%
+    #lazy_dt()%>%
+    mutate(ref_date = list_dates[i])%>%
+    
+    #get age at reference date and filter according to eligibilty
+    mutate(age_at_ref_date = as.numeric(ref_date-date_birth))%>%
+    filter(age_at_ref_date>elig_age_days_min)%>%
+    filter(age_at_ref_date<elig_age_days_max)%>%
+    
+    #milking animals
+    filter(date_start_milking<ref_date)%>%
+    
+    #remove animals that left
+    mutate(date_left_lt_ref = case_when(
+      is.na(date_left)~FALSE, 
+      TRUE~date_left<ref_date
+    ))%>%
+    filter(date_left_lt_ref==FALSE)%>%
+    
+    #get grouping
+    mutate(deno_group = case_when(
+      #(max_lactation_number<1)~'Heifer',
+      (min_lactation_number>0)~'Incomplete Life History', 
+      TRUE~ 'Valid Animal')
+      )%>%
+    
+    group_by(ref_date, deno_group)%>%
+      summarize(animal_count = n_distinct(id_animal))%>%
+      ungroup()#%>%
+    #as_tibble()
+  
+  
+  master_deno_cow<-bind_rows(master_deno_cow, deno_cow2)
+  
+  print(list_dates[i])
+}
+
+write_parquet(master_deno_cow, 'data/intermediate_files/denominator_by_day_cow.parquet')
+
+
+```
+
+#### Lactation level 
+```{r, message = false}
+
+list_dates<-sort(unique(calander$calander_date))[1:100]
+master_deno_lact<-NULL
+
+#i=100
+for (i in seq_along(list_dates)){
+  deno_lact2<-deno_lact%>%
+    #lazy_dt()%>%
+    mutate(ref_date = list_dates[i])%>%
+    
+    #remove animals archived or left before ref date
+    filter(!(date_archive<ref_date))%>%
+    filter(!(date_left<ref_date))%>%
+    
+    #get age at reference date and filter according to eligibilty
+    mutate(age_at_ref_date = as.numeric(ref_date-date_birth))%>%
+    filter(age_at_ref_date>elig_age_days_min)%>%
+    filter(age_at_ref_date<elig_age_days_max)%>%
+    
+    #lacation in progress on ref date
+    mutate(fdat_valid = case_when(
+      date_fresh<ref_date~'valid', 
+      lact_number==0~'valid', 
+      TRUE~'not valid')
+      )%>%
+    filter(fdat_valid %in% 'valid')%>%
+    
+      group_by(ref_date,  lact_group)%>%
+      summarize(animal_count = n_distinct(id_animal))%>%
+      ungroup()#%>%
+    #as_tibble()
+  
+  
+  master_deno_lact<-bind_rows(master_deno_lact, deno_lact2)
+  
+  print(list_dates[i])
+}
+
+write_parquet(master_deno_cow, 'data/intermediate_files/denominator_by_day_cow.parquet')
+
+
+```
+
+## Summarize Denominators
+
+### Montly Deno
+```{r}
+
+fxn_summarize_deno<-function(df_grpd){
+  df_grpd%>%
+    summarize(ct_animals_mean = mean(animal_count), 
+              ct_animals_median = median(animal_count),
+              ct_animals_sd = sd(animal_count), 
+              ct_animals_min = min(animal_count), 
+              ct_animals_max = max(animal_count))%>%
+    ungroup()%>%
+    mutate(across(where(is.numeric), ~ round(., 0)))
+}
+
+#--------------------------------------------------------
+deno_by_month_cow = master_deno_cow%>%
+  mutate(floordate_month = floor_date(ref_date, 'month'))%>%
+  group_by(floordate_month, deno_group)%>%
+  fxn_summarize_deno()
+
+deno_by_month_lact = master_deno_lact%>%
+  mutate(floordate_month = floor_date(ref_date, 'month'))%>%
+  group_by(floordate_month, lact_group)%>%
+  fxn_summarize_deno()
+            
+ 
+
+
+```
+
+
+

@@ -223,8 +223,7 @@ write_parquet(qc_event_type, 'data/qc_files/qc_event_type.parquet')
 
 
 
-test<-events2%>%
-  select(contains('remark'), Event, Remark)
+
 
 
 

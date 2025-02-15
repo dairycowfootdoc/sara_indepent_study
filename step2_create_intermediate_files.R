@@ -78,7 +78,14 @@ solds<-events_formatted|>
 master_animals<-animals|>
   left_join(enrolls)|>
   left_join(solds)|>
-  left_join(deads)
+  left_join(deads)|>
+  mutate(date_left = case_when(
+    (is.na(date_died)<1)~date_died,
+    (is.na(date_sold)<1)~date_sold,
+    TRUE~lubridate::mdy(NA))
+  )|>
+  mutate(age_left = as.numeric(date_left-date_birth))|>
+  mutate(age_enrolled = as.numeric(date_enrolled-date_birth))
 
 write_parquet(master_animals, 'data/intermediate_files/animals.parquet')
 
@@ -88,7 +95,9 @@ write_parquet(master_animals, 'data/intermediate_files/animals.parquet')
 
 #animal_lactations - each row is an animal/lactation----------
 animal_lactations<-events_formatted|>
-  group_by(id_animal, id_animal_lact, lact_number)|>
+  group_by(id_animal, id_animal_lact, lact_number, 
+           lact_group, lact_group_basic, lact_group_repro
+           )|>
   summarize(date_lact_first_event = min(date_event), 
             date_lact_last_event = max(date_event))|>
   ungroup()
@@ -128,7 +137,15 @@ drys<-events_formatted|>
 master_animal_lactations<-animal_lactations|>
   left_join(freshs)|>
   left_join(drys)|>
-  left_join(archives)
+  left_join(archives)|>
+  mutate(date_dim30 = date_fresh+30, 
+         date_dim60 = date_fresh+60, 
+         date_dim90 = date_fresh+90, 
+         date_dim120 = date_fresh+120,
+         date_dim150 = date_fresh+150, 
+         date_dim200 = date_fresh+200, 
+         date_dim305 = date_fresh+305, 
+         dim_at_archive = as.numeric(date_archive-date_fresh))
 
 write_parquet(master_animal_lactations, 'data/intermediate_files/animal_lactations.parquet')
 
@@ -201,20 +218,21 @@ disease_animal_level_long<-selected_animal_level_events_assign_gap%>%
             list_protocols_simple = paste0(sort(unique(protocols)), collapse = ','), 
             list_locate_lesion_simple = paste0(sort(unique(locate_lesion)), collapse = ',')
             )%>%
-  ungroup() |> 
-  as_tibble()
 
-write_parquet(disease_animal_level_long, 'data/intermediate_files/disease_animal_level_long.parquet')
-
-##create wide format disease----------------
-disease_animal_level_wide<-disease_animal_level_long%>%
+  ungroup()%>%
+  as_tibble()|>
   arrange(id_animal, disease, date_disease_first, date_disease_last)%>%
   group_by(id_animal, disease)%>%
   mutate(disease_count = 1:n(), 
          disease_count_max = sum(n()), 
          disease_date_last = max(date_disease_last))|>
   ungroup()%>%
-  mutate(disease_detail = paste0(disease, '_', disease_count))%>%
+  mutate(disease_detail = paste0(disease, '_', disease_count))
+
+write_parquet(disease_animal_level_long, 'data/intermediate_files/disease_animal_level_long.parquet')
+
+##create wide format disease----------------
+disease_animal_level_wide<-disease_animal_level_long%>%
   select(id_animal, disease, disease_date_last, disease_detail, date_disease_first)|>
   pivot_wider(names_from = disease_detail, 
               values_from = date_disease_first)
@@ -257,6 +275,8 @@ disease_lactation_level_long<-selected_lactation_level_events_assign_gap%>%
   group_by(id_animal, id_animal_lact, disease, gap1_key)%>%
   summarize(date_disease_first = min(date_event), 
             date_disease_last = max(date_event), 
+            dim_disease_first = min(dim_event, na.rm = T), 
+            dim_disease_last = max(dim_event, na.rm = T), 
             list_events = paste0(event, collapse = ','), 
             list_remarks = paste0(remark, collapse = ','), 
             list_protocols = paste0(protocols, collapse = ','), 
@@ -266,26 +286,25 @@ disease_lactation_level_long<-selected_lactation_level_events_assign_gap%>%
             list_remarks_simple = paste0(sort(unique(remark)), collapse = ','), 
             list_protocols_simple = paste0(sort(unique(protocols)), collapse = ','), 
             list_locate_lesion_simple = paste0(sort(unique(locate_lesion)), collapse = ','))%>%
-  ungroup() |> 
-  as_tibble()
 
-write_parquet(disease_lactation_level_long, 'data/intermediate_files/disease_lactation_level_long.parquet')
-
-##create wide format disease----------------
-disease_lactation_level_wide<-disease_lactation_level_long%>%
+  ungroup()|> 
+  as_tibble()%>%
   arrange(id_animal, id_animal_lact, disease, date_disease_first, date_disease_last)%>%
   group_by(id_animal, id_animal_lact, disease)%>%
   mutate(disease_count = 1:n(), 
          disease_count_max = sum(n()), 
          disease_date_last = max(date_disease_last))|>
   ungroup()%>%
-  mutate(disease_detail = paste0(disease, '_', disease_count))%>%
+  mutate(disease_detail = paste0(disease, '_', disease_count))
+
+
+write_parquet(disease_lactation_level_long, 'data/intermediate_files/disease_lactation_level_long.parquet')
+
+##create wide format disease----------------
+disease_lactation_level_wide<-disease_lactation_level_long%>%
   select(id_animal, id_animal_lact, disease, disease_date_last, disease_detail, date_disease_first)|>
   pivot_wider(names_from = disease_detail, 
               values_from = date_disease_first)
-
-
-
 
 
 #write out disease files------------------
