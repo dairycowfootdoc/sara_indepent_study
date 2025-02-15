@@ -181,7 +181,7 @@ write_parquet(master_deno_cow, 'data/intermediate_files/denominator_by_day_cow.p
 
 ```
 
-## summarize Denominators
+## Summarize Denominators
 
 ### Montly Deno
 ```{r}
@@ -205,63 +205,13 @@ deno_by_month_cow = master_deno_cow%>%
 
 deno_by_month_lact = master_deno_lact%>%
   mutate(floordate_month = floor_date(ref_date, 'month'))%>%
-  group_by(floordate_month, lact_group, deno_group)%>%
+  group_by(floordate_month, lact_group)%>%
   fxn_summarize_deno()
             
  
 
 
 ```
-
-
-
-## 
-
-### Calander Time
-```{r}
-
-disease_by_month<-disease_lact_long%>%
-  mutate(repro_status = case_when(
-    str_detect(list_treatments, 'A')~'Abort',
-     str_detect(list_treatments, 'P|E')~'Pregnant',
-    TRUE~'Open'
-  ))%>%
-  
-  mutate(floordate_month = floor_date(date_disease_first, 'month'))%>%
-  group_by(floordate_month)%>%
-  mutate(disease_total = n_distinct(gap1_key), 
-         cowlact_total = n_distinct(id_animal_lact))%>%
-  ungroup()%>%
-  group_by(floordate_month, disease_total, cowlact_total, repro_status)%>%
-  summarise(ct_disease = n_distinct(gap1_key), 
-            ct_cowlact = n_distinct(id_animal_lact))%>%
-  ungroup()%>%
-  mutate(pct_disease = ct_disease/disease_total,
-         pct_cowlact = ct_cowlact/cowlact_total)
-
-
-
-
-
-```
-
-#### plot canander time
-```{r}
-ggplot(disease_by_month)+
-  geom_point(aes(x = floordate_month, y = pct_disease, color = repro_status))+
-  geom_smooth(aes(x = floordate_month, y = pct_disease, color = repro_status, group = repro_status), span = .2)+
-  theme_bw()
-```
-
-
-### Phase Time (days in milk)
-```{r}
-
-
-
-```
-
-# Disease Outcome
 
 
 
