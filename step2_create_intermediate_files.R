@@ -78,7 +78,14 @@ solds<-events_formatted|>
 master_animals<-animals|>
   left_join(enrolls)|>
   left_join(solds)|>
-  left_join(deads)
+  left_join(deads)|>
+  mutate(date_left = case_when(
+    (is.na(date_died)<1)~date_died,
+    (is.na(date_sold)<1)~date_sold,
+    TRUE~lubridate::mdy(NA))
+  )|>
+  mutate(age_left = as.numeric(date_left-date_birth))|>
+  mutate(age_enrolled = as.numeric(date_enrolled-date_birth))
 
 write_parquet(master_animals, 'data/intermediate_files/animals.parquet')
 
@@ -88,7 +95,9 @@ write_parquet(master_animals, 'data/intermediate_files/animals.parquet')
 
 #animal_lactations - each row is an animal/lactation----------
 animal_lactations<-events_formatted|>
-  group_by(id_animal, id_animal_lact, lact_number)|>
+  group_by(id_animal, id_animal_lact, lact_number, 
+           lact_group, lact_group_basic, lact_group_repro
+           )|>
   summarize(date_lact_first_event = min(date_event), 
             date_lact_last_event = max(date_event))|>
   ungroup()
@@ -128,7 +137,15 @@ drys<-events_formatted|>
 master_animal_lactations<-animal_lactations|>
   left_join(freshs)|>
   left_join(drys)|>
-  left_join(archives)
+  left_join(archives)|>
+  mutate(date_dim30 = date_fresh+30, 
+         date_dim60 = date_fresh+60, 
+         date_dim90 = date_fresh+90, 
+         date_dim120 = date_fresh+120,
+         date_dim150 = date_fresh+150, 
+         date_dim200 = date_fresh+200, 
+         date_dim305 = date_fresh+305, 
+         dim_at_archive = as.numeric(date_archive-date_fresh))
 
 write_parquet(master_animal_lactations, 'data/intermediate_files/animal_lactations.parquet')
 
