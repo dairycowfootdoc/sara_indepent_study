@@ -48,7 +48,7 @@ fxn_graph_file_skim<-function(){
 
 This is the main fundamental file driving the values in all other files. This file was created using the EVENTS\2S2000C #1 #2 #4 #5 #6 #11 #12 #13 #15 #28 #29 #30 #31 #32 #38 #40 #43 command in Dairy Comp 305.
 
-Each row is an "event" which specifies the animal, lactation, date, and description (event, remark, protoocls etc.) of what happened to that animal on that day.
+Each row is an "event" which specifies the animal, phase (lactation), date, and description (event, remark, protoocls etc.) of what happened to that animal on that day. Usually the disease and treatment information is found by custom parsing this information.
 
 The events_formated files drops the original column names and uses standard ones which have been formatted.  If there is a problem with the formatting the events_all_columns file can be used to chase any issues.  
 

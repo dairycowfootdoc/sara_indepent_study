@@ -8,11 +8,17 @@ library(dtplyr)
 
 source('functions/fxn_lag_master.R')
 source('functions/fxn_locate_lesion.R')
-source('functions/fxn_assign_disease.R')
 
-list_selected_events<-c('MAST' ) #***Modify this *** to be the list of events you want to explore
+source('functions/fxn_disease.R')
+source('functions/fxn_treatment.R')
 
-fxn_assign_disease<-fxn_assign_disease_mastitis #***Match disease function to selected events***
+source('functions/fxn_parse_free_text.R') #functions to parse remarks and protocols
+source('functions/fxn_location.R') #custom function to specify event location
+
+list_selected_events<-c('BRED' ) #***Modify this *** to be the list of events you want to explore
+
+fxn_assign_disease<-fxn_assign_disease_bred #***Match disease function to selected events***
+fxn_assign_treatment<-fxn_assign_treatment_bred #***Match treatment function to selected events***
 
 set_outcome_gap_animal<- 60 #set this to be the number of days between events that would still count as the same event
 
@@ -34,7 +40,7 @@ events_formatted<-read_parquet('data/intermediate_files/events_formatted.parquet
 ##animals - each row is an animal------------
 animals<-events_formatted|>
   group_by(id_animal, date_birth, 
-           source_farm, source_state, #optional
+           #source_farm, source_state, #optional
            data_pull_date_min, data_pull_date_max)|>
   summarize(breed = paste0(sort(unique(breed)), collapse = ','))|>
   ungroup()
@@ -72,7 +78,14 @@ solds<-events_formatted|>
 master_animals<-animals|>
   left_join(enrolls)|>
   left_join(solds)|>
-  left_join(deads)
+  left_join(deads)|>
+  mutate(date_left = case_when(
+    (is.na(date_died)<1)~date_died,
+    (is.na(date_sold)<1)~date_sold,
+    TRUE~lubridate::mdy(NA))
+  )|>
+  mutate(age_left = as.numeric(date_left-date_birth))|>
+  mutate(age_enrolled = as.numeric(date_enrolled-date_birth))
 
 write_parquet(master_animals, 'data/intermediate_files/animals.parquet')
 
@@ -82,7 +95,9 @@ write_parquet(master_animals, 'data/intermediate_files/animals.parquet')
 
 #animal_lactations - each row is an animal/lactation----------
 animal_lactations<-events_formatted|>
-  group_by(id_animal, id_animal_lact, lact_number)|>
+  group_by(id_animal, id_animal_lact, lact_number, 
+           lact_group, lact_group_basic, lact_group_repro
+           )|>
   summarize(date_lact_first_event = min(date_event), 
             date_lact_last_event = max(date_event))|>
   ungroup()
@@ -122,7 +137,15 @@ drys<-events_formatted|>
 master_animal_lactations<-animal_lactations|>
   left_join(freshs)|>
   left_join(drys)|>
-  left_join(archives)
+  left_join(archives)|>
+  mutate(date_dim30 = date_fresh+30, 
+         date_dim60 = date_fresh+60, 
+         date_dim90 = date_fresh+90, 
+         date_dim120 = date_fresh+120,
+         date_dim150 = date_fresh+150, 
+         date_dim200 = date_fresh+200, 
+         date_dim305 = date_fresh+305, 
+         dim_at_archive = as.numeric(date_archive-date_fresh))
 
 write_parquet(master_animal_lactations, 'data/intermediate_files/animal_lactations.parquet')
 
@@ -142,10 +165,10 @@ events_selected<-events_formatted%>%
 
 
 events_parsed<-events_selected%>%
-  fxn_locate_lesion()%>% #creates lesion location variable, function can be customized
-  fxn_assign_disease() #creates disease variable, function can be customized
-
-
+  fxn_assign_disease()%>% #creates disease variable, function can be customized
+  fxn_assign_treatment()%>% #creates treatment variable, function can be customized
+  mutate(across(.cols = c(disease, treatment), 
+                .fns = ~str_replace_na(.x, 'Unknown') )) #removes NA from disease and treatment variables
 
 
 
@@ -160,7 +183,7 @@ sort_vars <- c('id_animal',  'disease') #does NOT have a date variable, must hav
 
 ##Gap1 ----------------------
 
-set_outcome_gap_animal<- 1
+#set_outcome_gap_animal<- 1
 
 selected_animal_level_events_assign_gap<-test_fxn1(x = events_parsed%>%
                                                      mutate(date = date_event),
@@ -181,30 +204,35 @@ n_distinct(selected_animal_level_events_assign_gap$gap1_key) #for testing
 
 ##create long format disease--------------
 disease_animal_level_long<-selected_animal_level_events_assign_gap%>%
+  lazy_dt() |> 
   group_by(id_animal, disease, gap1_key)%>%
   summarize(date_disease_first = min(date_event), 
             date_disease_last = max(date_event), 
             list_events = paste0(event, collapse = ','), 
             list_remarks = paste0(remark, collapse = ','), 
             list_protocols = paste0(protocols, collapse = ','), 
+            list_treatments = paste0(treatment , collapse = ','),
             list_locate_lesion = paste0(locate_lesion, collapse = ','), 
             list_events_simple = paste0(sort(unique(event)), collapse = ','), 
             list_remarks_simple = paste0(sort(unique(remark)), collapse = ','), 
             list_protocols_simple = paste0(sort(unique(protocols)), collapse = ','), 
-            list_locate_lesion_simple = paste0(sort(unique(locate_lesion)), collapse = ','))%>%
-  ungroup()
+            list_locate_lesion_simple = paste0(sort(unique(locate_lesion)), collapse = ',')
+            )%>%
 
-write_parquet(disease_animal_level_long, 'data/intermediate_files/disease_animal_level_long.parquet')
-
-##create wide format disease----------------
-disease_animal_level_wide<-disease_animal_level_long%>%
+  ungroup()%>%
+  as_tibble()|>
   arrange(id_animal, disease, date_disease_first, date_disease_last)%>%
   group_by(id_animal, disease)%>%
   mutate(disease_count = 1:n(), 
          disease_count_max = sum(n()), 
          disease_date_last = max(date_disease_last))|>
   ungroup()%>%
-  mutate(disease_detail = paste0(disease, '_', disease_count))%>%
+  mutate(disease_detail = paste0(disease, '_', disease_count))
+
+write_parquet(disease_animal_level_long, 'data/intermediate_files/disease_animal_level_long.parquet')
+
+##create wide format disease----------------
+disease_animal_level_wide<-disease_animal_level_long%>%
   select(id_animal, disease, disease_date_last, disease_detail, date_disease_first)|>
   pivot_wider(names_from = disease_detail, 
               values_from = date_disease_first)
@@ -243,36 +271,40 @@ n_distinct(selected_lactation_level_events_assign_gap$gap1_key) #for testing
 
 ##create long format disease---------------
 disease_lactation_level_long<-selected_lactation_level_events_assign_gap%>%
+  lazy_dt() |> 
   group_by(id_animal, id_animal_lact, disease, gap1_key)%>%
   summarize(date_disease_first = min(date_event), 
             date_disease_last = max(date_event), 
+            dim_disease_first = min(dim_event, na.rm = T), 
+            dim_disease_last = max(dim_event, na.rm = T), 
             list_events = paste0(event, collapse = ','), 
             list_remarks = paste0(remark, collapse = ','), 
             list_protocols = paste0(protocols, collapse = ','), 
+            list_treatments = paste0(treatment, collapse = ','), 
             list_locate_lesion = paste0(locate_lesion, collapse = ','), 
             list_events_simple = paste0(sort(unique(event)), collapse = ','), 
             list_remarks_simple = paste0(sort(unique(remark)), collapse = ','), 
             list_protocols_simple = paste0(sort(unique(protocols)), collapse = ','), 
             list_locate_lesion_simple = paste0(sort(unique(locate_lesion)), collapse = ','))%>%
-  ungroup()
 
-write_parquet(disease_lactation_level_long, 'data/intermediate_files/disease_lactation_level_long.parquet')
-
-##create wide format disease----------------
-disease_lactation_level_wide<-disease_lactation_level_long%>%
+  ungroup()|> 
+  as_tibble()%>%
   arrange(id_animal, id_animal_lact, disease, date_disease_first, date_disease_last)%>%
   group_by(id_animal, id_animal_lact, disease)%>%
   mutate(disease_count = 1:n(), 
          disease_count_max = sum(n()), 
          disease_date_last = max(date_disease_last))|>
   ungroup()%>%
-  mutate(disease_detail = paste0(disease, '_', disease_count))%>%
+  mutate(disease_detail = paste0(disease, '_', disease_count))
+
+
+write_parquet(disease_lactation_level_long, 'data/intermediate_files/disease_lactation_level_long.parquet')
+
+##create wide format disease----------------
+disease_lactation_level_wide<-disease_lactation_level_long%>%
   select(id_animal, id_animal_lact, disease, disease_date_last, disease_detail, date_disease_first)|>
   pivot_wider(names_from = disease_detail, 
               values_from = date_disease_first)
-
-
-
 
 
 #write out disease files------------------
