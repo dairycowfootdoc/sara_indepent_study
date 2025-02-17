@@ -131,7 +131,8 @@ check_flags
 ### Create Denominators
 
 #### Cow level 
-```{r, message = false}
+```{r}
+#| message: false
 
 list_dates<-sort(unique(calander$calander_date))
 master_deno_cow<-NULL
@@ -178,7 +179,8 @@ write_parquet(master_deno_cow, 'data/intermediate_files/denominator_by_day_cow.p
 ```
 
 #### Lactation level - any DIM
-```{r, message = false}
+```{r}
+#| message: false
 
 list_dates<-sort(unique(calander$calander_date))
 master_deno_lact<-NULL
@@ -223,7 +225,9 @@ write_parquet(master_deno_lact, 'data/intermediate_files/denominator_by_day_lact
 ```
 
 #### Lactation level - DIM <60
-```{r, message = false}
+```{r}
+
+#| message: false
 
 list_dates<-sort(unique(calander$calander_date))
 master_deno_lact60<-NULL
