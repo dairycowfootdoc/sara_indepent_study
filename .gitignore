@@ -69,7 +69,7 @@ data/event_files/*.parquet
 data/template_files/*.parquet
 data/stashed_files/*.parquet
 
-*.html
+
 
 #checkto see if push/pull is working
 
