@@ -17,13 +17,14 @@ source('step2_create_intermediate_files.R')
 
 ### Step3 Create Denominators ---------------------
 #***Modify This Step to Include the Denominators of Interest***
-*quarto::quarto_render('step3_create_denominators.qmd') 
+quarto::quarto_render('step3_create_denominators.qmd') 
 
 
 ### Step 4 Report Templates------------------------
 #add basic report templates
 # event check report
 quarto::quarto_render('explore_event_types.qmd') 
+quarto::quarto_render('data_dictionary.qmd')
 # disease report 
 # quarto::quarto_render('step3_report_disease_template.qmd')
 
