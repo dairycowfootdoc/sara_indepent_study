@@ -34,7 +34,7 @@ summarize_events<-events_formatted |>
 
 # Summary Graph
 
-The most commonly used protocols to treat mastitis are SpectromastLC, Today, and AHV. The most common culture result is *staph. Aureus*.
+The most commonly used protocols to treat mastitis are SpectraMastLC, Today, and AHV. The most common culture result is *staph. Aureus*.
 
 ```{r}
 #| fig-height: 8
@@ -65,6 +65,10 @@ summarize_events <- summarize_events %>%
         )
 ```
 
+# Mastitis Events by Treatment Protocol
+
+Percentage of mastitis events that were treated by each protocol.
+
 ```{r}
 library(ggplot2)
 library(dplyr)
@@ -94,7 +98,7 @@ ggplot(mastitis_events) +
   labs(
     x = "",
     y = "Percentage of Total Mastitis Events (%)",
-    title = "Distribution of Mastitis Events by Category"
+    title = "Distribution of Mastitis Events by Protocol"
   ) +
   theme(
     legend.position = "none"
@@ -102,6 +106,10 @@ ggplot(mastitis_events) +
 ```
 
 # Treatment Success
+
+Cows that were initially treated with SpectraMastLC were retreated for mastitis within 14 - 21 days at a rate of 5.6%. Cows that were initially treated with AHV were retreated within 14 - 21 days at a rate of 4.5%.
+
+This was created with the idea that with a gap of 14, animals that were retreated within 14 days are being misidentified as they have not completed their treatment interval.
 
 ```{r}
 library(ggplot2)
@@ -126,31 +134,142 @@ treatment_data <- events_formatted %>%
    prev_event_date = lag(date_event), #previous date is the entry prior to date_event, looks by animal because of group_by
     prev_protocol = lag(protocols_remaining_after_numbers1),  # Check previous protocol
     days_since_last_event = as.numeric(date_event - prev_event_date),
-    retreated_within_14_days = ifelse(days_since_last_event <= 14, TRUE, FALSE)
+    retreated_within_14_days = ifelse(between(days_since_last_event, 14, 21), TRUE, FALSE)
+   #rewrote to count as retreatment if after 14 days since initial MAST event but within 21 days. 
   ) %>%
   ungroup()
 
-# Count retreatments by protocol (of the initial treatment)
+# Create a new dataset with only retreatments as a data check
+retreatment_data <- treatment_data %>%
+  filter(retreated_within_14_days == TRUE)
+ 
+# Count retreatments by protocol of the initial treatment
 retreatment_counts <- treatment_data %>%
   filter(retreated_within_14_days == TRUE) %>%
   group_by(prev_protocol) %>%
   summarise(num_retreatments = n()) %>%
   rename(protocol = prev_protocol)  # Rename column for clarity
 
-# Plot the retreatment counts by protocol
-ggplot(retreatment_counts, aes(x = protocol, y = num_retreatments, fill = protocol)) +
+# Count total events by protocol
+total_events <- treatment_data %>%
+  count(protocols_remaining_after_numbers1, name = "total_events")
+
+# Count retreatments (events that occurred within 14 - 21 days)
+retreatment_counts <- treatment_data %>%
+  filter(retreated_within_14_days == TRUE) %>%
+  count(protocols_remaining_after_numbers1, name = "retreatment_events")
+
+# Merge total events with retreatments
+retreatment_data <- left_join(retreatment_counts, total_events, by = "protocols_remaining_after_numbers1") %>%
+  mutate(retreatment_percentage = (retreatment_events / total_events) * 100)
+
+# Plot retreatment percentage per protocol
+ggplot(retreatment_data, aes(x = protocols_remaining_after_numbers1, 
+                             y = retreatment_percentage, 
+                             fill = protocols_remaining_after_numbers1)) +
   geom_bar(stat = "identity", width = 0.5, color = "black") +
-  scale_fill_manual(values = c("AHV" = "steelblue", "Spect" = "firebrick")) +  # Custom colors
+   geom_text(aes(label = paste0(round(retreatment_percentage, 1), "%")),  # Add percentage labels
+            vjust = -0.5, size = 3, fontface = "bold") +  # Adjust label position & size
+   scale_fill_manual(values = c("AHVmastitis" = "purple", "SpectraMastLC" = "pink"))+
   theme_minimal() +
   labs(
-    title = "Number of Retreatments Within 14 Days: AHV vs SpectromastLC",
-    x = "Initial Treatment Protocol",
-    y = "Number of Retreatments"
+    title = "Retreatments as % of Total Treatments by Protocol",
+    x = "Treatment Protocol",
+    y = "Retreatment Percentage (%)",
+    fill = "Protocol"
   ) +
   theme(
-    legend.position = "none",
-    text = element_text(size = 14)
+    text = element_text(size = 12),
+    legend.position = "top"
   )
+
+```
+
+# Treatment Success by Lactation Group
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)  # Needed for replace_na()
+
+# Count total treatments by lactation group
+total_treatments_lact <- treatment_data %>%
+  count(lact_group, name = "total_events")
+
+# Count retreatments by lactation group within 14 days
+retreatments_lact <- treatment_data %>%
+  filter(retreated_within_14_days == TRUE) %>%
+  count(lact_group, name = "retreatment_events")
+
+# Merge datasets & calculate retreatment percentage
+retreatment_rates <- left_join(retreatments_lact, total_treatments_lact, by = "lact_group") %>%
+  mutate(
+    retreatment_events = replace_na(retreatment_events, 0),  # Handle missing values
+    retreatment_percentage_lact = (retreatment_events / total_events) * 100
+  )
+
+# Plot retreatment rates by lactation group
+ggplot(retreatment_rates, aes(x = factor(lact_group),  
+                              y = retreatment_percentage_lact, 
+                              fill = factor(lact_group))) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.6, color = "black") +  
+  geom_text(aes(label = paste0(round(retreatment_percentage_lact, 1), "%")), 
+            position = position_dodge(0.6), vjust = -0.5, size = 3, fontface = "bold") +  
+  scale_fill_manual(values = c("LACT 1" = "yellow", "LACT 2" = "green", "LACT 3+" = "cyan")) +  
+  theme_minimal() +
+  labs(
+    title = "Retreatment Rates by Lactation Group",
+    x = "Lactation Group",
+    y = "Retreatment Percentage (%)",
+    fill = "Lactation Group"
+  ) +
+  theme(
+    text = element_text(size = 12),
+    legend.position = "top"
+  )
+
+```
+
+# Treatment Success by Lactation Group and Protocol
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Count total treatments by protocol & lactation group
+total_treatments <- treatment_data %>%
+  count(protocols_remaining_after_numbers1, lact_group, name = "total_events")
+
+# Count retreatments by protocol & lactation group (within 14 days)
+retreatments <- treatment_data %>%
+  filter(retreated_within_14_days == TRUE) %>%
+  count(protocols_remaining_after_numbers1, lact_group, name = "retreatment_events")
+
+# Merge datasets & calculate retreatment percentage
+retreatment_rates <- left_join(retreatments, total_treatments, 
+                               by = c("protocols_remaining_after_numbers1", "lact_group")) %>%
+  mutate(retreatment_percentage = (retreatment_events / total_events) * 100)
+
+ggplot(retreatment_rates, aes(x = factor(lact_group),  # Lactation group as categorical
+                              y = retreatment_percentage, 
+                              fill = protocols_remaining_after_numbers1)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.6, color = "black") +  
+  geom_text(aes(label = paste0(round(retreatment_percentage, 1), "%")), 
+            position = position_dodge(0.6), vjust = -0.5, size = 3, fontface = "bold") +  
+  scale_fill_manual(values = c("AHVmastitis" = "steelblue", "SpectraMastLC" = "forestgreen")) +  
+  theme_minimal() +
+  labs(
+    title = "Retreatment Rates by Lactation Group & Protocol",
+    x = "Lactation Group",
+    y = "Retreatment Percentage (%)",
+    fill = "Treatment Protocol"
+  ) +
+  theme(
+    text = element_text(size = 14),
+    legend.position = "top"
+  )
+
+
 ```
 
 # Mastitis by DIM
