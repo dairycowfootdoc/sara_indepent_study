@@ -101,6 +101,61 @@ ggplot(mastitis_events) +
   )
 ```
 
+# Treatment Success
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(stringr)
+
+# Ensure events_formatted is a data frame
+events_formatted <- as.data.frame(events_formatted)
+
+# Ensure date_event is in Date format
+events_formatted <- events_formatted %>%
+  mutate(date_event = as.Date(date_event))  # Convert if not already Date type
+
+#Pull the wanted information into a new data set, only pull MAST events that used AHV or Spec
+treatment_data <- events_formatted %>%
+  filter(event == "MAST", (str_starts(protocols_remaining_after_numbers1, "AHV") |
+         str_starts(protocols_remaining_after_numbers1, "Spec"))) # Only relevant treatments
+  #filter(date_event > "2023-01-01") # Only look at last 2 years
+
+# Identify animals treated twice within 14 days
+ treatment_data <- treatment_data %>%
+  arrange(id_animal, date_event) %>% 
+  group_by(id_animal) %>%
+  mutate(
+   prev_event_date = lag(date_event), #previous date is the entry prior to date_event, looks by animal because of group_by
+    prev_protocol = lag(protocols_remaining_after_numbers1),  # Check previous protocol
+    days_since_last_event = as.numeric(date_event - prev_event_date),
+    retreated_within_14_days = ifelse(days_since_last_event <= 14, TRUE, FALSE)
+  ) %>%
+  ungroup()
+
+# Count retreatments by protocol (of the initial treatment)
+retreatment_counts <- treatment_data %>%
+  filter(retreated_within_14_days == TRUE) %>%
+  group_by(prev_protocol) %>%
+  summarise(num_retreatments = n()) %>%
+  rename(protocol = prev_protocol)  # Rename column for clarity
+
+# Plot the retreatment counts by protocol
+ggplot(retreatment_counts, aes(x = protocol, y = num_retreatments, fill = protocol)) +
+  geom_bar(stat = "identity", width = 0.5, color = "black") +
+  scale_fill_manual(values = c("AHV" = "steelblue", "Spect" = "firebrick")) +  # Custom colors
+  theme_minimal() +
+  labs(
+    title = "Number of Retreatments Within 14 Days: AHV vs SpectromastLC",
+    x = "Initial Treatment Protocol",
+    y = "Number of Retreatments"
+  ) +
+  theme(
+    legend.position = "none",
+    text = element_text(size = 14)
+  )
+```
+
 # Mastitis by DIM
 
 ```{r}
