@@ -1,0 +1,134 @@
+---
+title: "explore_mast"
+format: html
+editor: source
+format: 
+ html:
+   embed-resources: true
+   toc: true
+   toc-location: left
+execute:
+    echo: false
+    message: false
+    warning: false
+---
+
+```{r}
+library(tidyverse)
+library(arrow)
+library(dtplyr)
+library(DT)
+
+source('functions/DT_base.R') #functions to parse remarks and protocols
+
+events_formatted<-read_parquet('data/intermediate_files/events_formatted.parquet') |> 
+  filter(event %in% c("MAST", "CULTURE")) 
+
+summarize_events<-events_formatted |> 
+  group_by(event, protocols_remaining_after_numbers1) |> 
+  summarize(count_rows=sum(n()))|>
+  ungroup()%>%
+  mutate(event_type = factor(protocols_remaining_after_numbers1), 
+         Event = factor(event))
+```
+
+# Summary Graph
+
+The most commonly used protocols to treat mastitis are SpectromastLC, Today, and AHV. The most common culture result is *staph. Aureus*.
+
+```{r}
+#| fig-height: 8
+# count y vars
+
+facet_order <- summarize_events %>%
+  group_by(event_type) %>%
+  summarise(n_y = n_distinct(event)) %>%
+  arrange(desc(n_y)) %>%  # Order by most y categories
+  pull(event_type)
+
+# order events
+summarize_events <- summarize_events %>%
+  mutate(event_type = fct_reorder(event_type, count_rows, .fun = sum, .desc = FALSE)) 
+
+  ggplot(summarize_events)+
+  geom_bar(aes(x = event_type,
+               y = count_rows, fill = event_type), stat = "identity")+
+  #facet_wrap(factor(event, levels = facet_order) ~., scales = 'free')+
+    facet_wrap(vars(event), ncol = 1, scales = "free")+
+  coord_flip()+
+  scale_fill_viridis_d()+
+  theme_minimal()+
+  labs(x = "",
+       y = "Row Count")+
+  theme(legend.position = "none",
+        # axis.text.y = element_text(size = 6)
+        )
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(forcats)
+
+# Filter for only Mastitis events
+mastitis_events <- summarize_events %>%
+  filter(event == "MAST")
+
+# Compute the total count of all mastitis events (single scalar value)
+total_mastitis <- sum(mastitis_events$count_rows)
+
+# Compute percentage relative to total mastitis events
+mastitis_events <- mastitis_events %>%
+  mutate(percent = (count_rows / total_mastitis) * 100)  # Compute percentage
+
+# Reorder event_type factor based on sum of count_rows
+mastitis_events <- mastitis_events %>%
+  mutate(event_type = fct_reorder(event_type, count_rows, .fun = sum, .desc = FALSE))
+
+# Plot with percentages
+ggplot(mastitis_events) +
+  geom_bar(aes(x = event_type, y = percent, fill = event_type), stat = "identity") +
+  coord_flip() +
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  labs(
+    x = "",
+    y = "Percentage of Total Mastitis Events (%)",
+    title = "Distribution of Mastitis Events by Category"
+  ) +
+  theme(
+    legend.position = "none"
+  )
+```
+
+# Mastitis by DIM
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+mast_dim <- events_formatted %>% 
+  filter(event == "MAST") %>% 
+  select(id_animal, event, dim_event, lact_group, protocols_remaining_after_letters1)  
+
+graph <- ggplot(mast_dim, aes(x = dim_event)) +
+  geom_histogram(binwidth = 10, fill = "steelblue", color = "black", alpha = 0.7) +
+  theme_minimal(base_size = 14) +
+  facet_wrap(vars(event), ncol = 1, scales = "free") +
+  labs(
+    title = "Distribution of Mastitis Events Over Days in Milk",
+    x = "Days in Milk",
+    y = "Count"
+  ) +
+  theme(
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(size = 14, face = "bold")
+  )
+
+print(graph)
+```
+
+# 
+
+
