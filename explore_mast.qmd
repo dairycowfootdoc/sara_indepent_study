@@ -108,22 +108,19 @@ library(ggplot2)
 library(dplyr)
 library(stringr)
 
-# Ensure events_formatted is a data frame
-events_formatted <- as.data.frame(events_formatted)
-
 # Ensure date_event is in Date format
 events_formatted <- events_formatted %>%
   mutate(date_event = as.Date(date_event))  # Convert if not already Date type
 
 #Pull the wanted information into a new data set, only pull MAST events that used AHV or Spec
 treatment_data <- events_formatted %>%
-  filter(event == "MAST", (str_starts(protocols_remaining_after_numbers1, "AHV") |
+  filter(event %in% c("MAST", "CULTURE"), (str_starts(protocols_remaining_after_numbers1, "AHV") |
          str_starts(protocols_remaining_after_numbers1, "Spec"))) # Only relevant treatments
   #filter(date_event > "2023-01-01") # Only look at last 2 years
 
 # Identify animals treated twice within 14 days
  treatment_data <- treatment_data %>%
-  arrange(id_animal, date_event) %>% 
+  arrange(id_animal, date_event, protocols_remaining_after_numbers1) %>% 
   group_by(id_animal) %>%
   mutate(
    prev_event_date = lag(date_event), #previous date is the entry prior to date_event, looks by animal because of group_by
