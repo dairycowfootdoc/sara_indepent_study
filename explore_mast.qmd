@@ -121,7 +121,7 @@ events_formatted <- events_formatted %>%
 
 #Pull the wanted information into a new data set, only pull MAST events that used AHV or Spec
 treatment_data <- events_formatted %>%
-  filter(event %in% c("MAST", "CULTURE"), (str_starts(protocols_remaining_after_numbers1, "AHVmast") |
+  filter(event %in% c("MAST"), (str_starts(protocols_remaining_after_numbers1, "AHVmast") |
          str_starts(protocols_remaining_after_numbers1, "Spec"))) # Only relevant treatments
   
 # Identify treatment periods where a new first event starts after 60 days
@@ -257,7 +257,7 @@ library(ggplot2)
 total_treatments <- treatment_data %>%
   count(protocols_remaining_after_numbers1, lact_group, name = "total_events")
 
-# Count retreatments by protocol & lactation group (within 14 days)
+# Count re-treatments by protocol & lactation group (within 14 days)
 retreatments <- treatment_data %>%
   filter(is_retreatment == TRUE) %>%
   count(protocols_remaining_after_numbers1, lact_group, name = "retreatment_events")
@@ -291,101 +291,101 @@ ggplot(retreatment_rates, aes(x = factor(lact_group),  # Lactation group as cate
 
 # Survival Curve by Protocol
 
-```{r}
-library(survival)
-library(survminer)
-library(dplyr)
-library(stringr)
+-   <div>
 
-# Create protocol labels
-treatment_data <- treatment_data %>%
-  mutate(
-    protocol_label = case_when(
-      str_starts(protocols_remaining_after_numbers1, "AHV") ~ "AHV",
-      str_starts(protocols_remaining_after_numbers1, "Spec") ~ "SpectraMastLC",
-      TRUE ~ NA_character_
-    )
-  ) %>%
-  filter(!is.na(protocol_label))  # Keep only relevant treatments
+    ```{r}
+    library(survival)
+    library(survminer)
+    library(dplyr)
+    library(stringr)
 
-# Find cows that have an exit event (SOLD or DIED)
-exit_cows <- treatment_data %>%
-  filter(event %in% c("SOLD", "DIED")) %>%
-  group_by(id_animal) %>%
-  summarise(date_exit = min(date_event, na.rm = TRUE)) %>%
-  ungroup()
+    # Create protocol labels
+    treatment_data <- treatment_data %>%
+      mutate(
+        protocol_label = case_when(
+          str_starts(protocols_remaining_after_numbers1, "AHV") ~ "AHV",
+          str_starts(protocols_remaining_after_numbers1, "Spec") ~ "SpectraMastLC",
+          TRUE ~ NA_character_
+        )
+      )
 
-# Merge exit dates back into the dataset
-treatment_data <- treatment_data %>%
-  left_join(exit_cows, by = "id_animal") %>%
-  mutate(
-    days_until_exit = as.numeric(date_exit - date_event),
-    event_occurred = ifelse(!is.na(date_exit), 1, 0)  # 1 if cow left, 0 if censored
-  )
+    # Find cows that have an exit event (SOLD or DIED) in orginial event data
+    exit_cows <- events_formatted %>%
+      filter(event %in% c("SOLD", "DIED")) %>%
+      group_by(id_animal) %>%
+      summarise(date_exit = min(date_event, na.rm = TRUE)) %>%  # Get the earliest exit date
+      ungroup()
 
-# Keep only mastitis cases treated with AHV or SpectraMastLC
-final_mastitis_data <- treatment_data %>%
-  filter(
-    event == "MAST",
-    protocol_label %in% c("AHV", "SpectraMastLC")
-  )
+    #par down treatment data
+    mastitis_data_final <- treatment_data %>%
+      select(id_animal, event, date_event, protocols_remaining_after_numbers1)
 
-# Fit Kaplan-Meier survival model
-fitKM <- survfit(Surv(days_until_exit, event_occurred) ~ protocol_label, data = final_mastitis_data)
+    # Merge exit dates into the original dataset
+    mastitis_data_final <- mastitis_data_final %>%
+      left_join(exit_cows, by = "id_animal")%>%  # Add date_exit for cows that have left
+        mutate(
+        days_until_exit = as.numeric(date_exit - date_event),  # Compute days until exit
+        event_occurred = ifelse(!is.na(date_exit), 1, 0)  # 1 = exited, 0 = still in herd
+      )
 
-# Create a Kaplan-Meier survival plot using 'ggsurvplot'
-# most of this makes them pretty.
-# you can just run the first line and it will create a graph)
-# km <- ggsurvplot(fitKM, 
-#                  pval = FALSE, 
-#                  ncol = 2,
-#                  conf.int = TRUE,
-#                  censor = FALSE,
-#                  fun = "pct",
-#                  size = 1,
-#                  linetype = c(1, 2, 3), # Specify dashed lines for each group
-#                  palette = c("#440154ff", "#3b528bff", "#fde725ff"),
-#                  legend = "bottom",
-#                  legend.title = "Lactation",
-#                  legend.labs = lact.labs,
-#                  xlab = "Days to Lameness after Treatment",
-#                  ylab = "Percentage of Healthy Cows",
-#                  xlim = c(0, 180),
-#                  ylim = c(50, 100),
-#                  break.time.by = 30,
-#                  short.panel.labs = TRUE) 
-  # Set the fill colors and linetypes for each group in the legend and overide
-  # the default where lines and colours are separate
-  # to get codes library(RColorBrewer) brewer.pal(n=5,"Accent")
- 
+    # # Fit Kaplan-Meier survival model
+    #fitKM <- survfit(Surv(days_until_exit, event_occurred) ~ protocol_label, data = treatment_data)
 
-# this creates a table to illustrate graph above, 
-# creates predicted risk of culling at time point X
+    # Create a Kaplan-Meier survival plot using 'ggsurvplot'
+    # most of this makes them pretty.
+    # you can just run the first line and it will create a graph)
+    # km <- ggsurvplot(fitKM, 
+    #                  pval = FALSE,
+    #                  ncol = 2,
+    #                  conf.int = TRUE,
+    #                  censor = FALSE,
+    #                  fun = "pct",
+    #                  size = 1,
+    #                  linetype = c(1, 2, 3), # Specify dashed lines for each group
+    #                  palette = c("#440154ff", "#3b528bff", "#fde725ff"),
+    #                  legend = "bottom",
+    #                  legend.title = "Lactation",
+    #                  legend.labs = lact.labs,
+    #                  xlab = "Days to Lameness after Treatment",
+    #                  ylab = "Percentage of Healthy Cows",
+    #                  xlim = c(0, 180),
+    #                  ylim = c(50, 100),
+    #                  break.time.by = 30,
+    #                  short.panel.labs = TRUE)
+      # Set the fill colors and linetypes for each group in the legend and overide
+      # the default where lines and colours are separate
+      # to get codes library(RColorBrewer) brewer.pal(n=5,"Accent")
+     
 
-# time to mast table----
+    # this creates a table to illustrate graph above, 
+    # creates predicted risk of culling at time point X
 
-# fit_farm <- survfit(Surv(censordat, nextrmlame) ~ lctgp, 
-#                     data = trimtolame)
-# 
-# # farm
-# tbl_time_2_lame_farm <- tbl_survfit(fit_farm,
-#                                     times = c(90, 120, 150, 180),
-#                                     label = " ",
-#                                     reverse = TRUE,
-#                                     label_header = "{time} Days") %>% 
-#   as_flex_table() %>% # makes formatting and pdf better
-#   add_header_row(top = TRUE,
-#                  values = c("Protocol",
-#                             "Days",
-#                             "",
-#                             "",
-#                             "")) %>% 
-#   bold(i = 1, bold = TRUE, part = "header") %>% # bolds headers
-#   bold(i = 2, bold = TRUE, part = "header") %>% 
-#   merge_at(i = 1:2, j = 1, part = "header") %>% #merges 1st row
-#   merge_at(i = 1, j = 2:5, part = "header") %>% # merges top columns
-#   autofit() %>% 
-#   fit_to_width(max_width= 6) |> 
-#   delete_rows( i= 1, part = "body") |> 
-#   hline_bottom(part = "body")
-```
+    # time to mast table----
+
+    # fit_farm <- survfit(Surv(censordat, nextrmlame) ~ lctgp, 
+    #                     data = trimtolame)
+    # 
+    # # farm
+    # tbl_time_2_lame_farm <- tbl_survfit(fit_farm,
+    #                                     times = c(90, 120, 150, 180),
+    #                                     label = " ",
+    #                                     reverse = TRUE,
+    #                                     label_header = "{time} Days") %>% 
+    #   as_flex_table() %>% # makes formatting and pdf better
+    #   add_header_row(top = TRUE,
+    #                  values = c("Protocol",
+    #                             "Days",
+    #                             "",
+    #                             "",
+    #                             "")) %>% 
+    #   bold(i = 1, bold = TRUE, part = "header") %>% # bolds headers
+    #   bold(i = 2, bold = TRUE, part = "header") %>% 
+    #   merge_at(i = 1:2, j = 1, part = "header") %>% #merges 1st row
+    #   merge_at(i = 1, j = 2:5, part = "header") %>% # merges top columns
+    #   autofit() %>% 
+    #   fit_to_width(max_width= 6) |> 
+    #   delete_rows( i= 1, part = "body") |> 
+    #   hline_bottom(part = "body")
+    ```
+
+    </div>
