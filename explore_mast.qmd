@@ -21,7 +21,8 @@ library(DT)
 source('functions/DT_base.R') #functions to parse remarks and protocols
 
 events_formatted<-read_parquet('data/intermediate_files/events_formatted.parquet') |> 
-  filter(event %in% c("MAST", "CULTURE")) 
+  filter(event %in% c("MAST", "CULTURE"))%>%
+  filter(date_event > "2024-01-01")
 
 summarize_events<-events_formatted |> 
   group_by(event, protocols_remaining_after_numbers1) |> 
@@ -73,7 +74,7 @@ library(ggplot2)
 library(dplyr)
 library(forcats)
 
-# Filter for only Mastitis events
+# Filter for only Mastitis events within the last year
 mastitis_events <- summarize_events %>%
   filter(event == "MAST")
 
@@ -104,6 +105,35 @@ ggplot(mastitis_events) +
   )
 ```
 
+# Mastitis by DIM
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+mast_dim <- events_formatted %>% 
+  filter(event == "MAST") %>% 
+  #filter(date_event > "2024-01-01")
+  select(id_animal, event, dim_event, lact_group, protocols_remaining_after_letters1)  
+
+graph <- ggplot(mast_dim, aes(x = dim_event)) +
+  geom_histogram(binwidth = 10, fill = "steelblue", color = "black", alpha = 0.7) +
+  theme_minimal(base_size = 14) +
+  facet_wrap(vars(event), ncol = 1, scales = "free") +
+  labs(
+    title = "Distribution of Mastitis Events Over Days in Milk",
+    x = "Days in Milk",
+    y = "Count"
+  ) +
+  theme(
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(size = 14, face = "bold")
+  )
+
+print(graph)
+```
+
 # Treatment Success
 
 Cows that were initially treated with SpectraMastLC were retreated for mastitis within 14 - 21 days at a rate of 5.6%. Cows that were initially treated with AHV were retreated within 14 - 21 days at a rate of 4.5%.
@@ -121,58 +151,76 @@ events_formatted <- events_formatted %>%
 
 #Pull the wanted information into a new data set, only pull MAST events that used AHV or Spec
 treatment_data <- events_formatted %>%
-  filter(event %in% c("MAST", "CULTURE"), (str_starts(protocols_remaining_after_numbers1, "AHV") |
+  filter(event %in% c("MAST", "CULTURE"), (str_starts(protocols_remaining_after_numbers1, "AHVmast") |
          str_starts(protocols_remaining_after_numbers1, "Spec"))) # Only relevant treatments
-  #filter(date_event > "2023-01-01") # Only look at last 2 years
+  
 
-# Identify animals treated twice within 14 days
- treatment_data <- treatment_data %>%
-  arrange(id_animal, date_event, protocols_remaining_after_numbers1) %>% 
+# Identify treatment periods where a new first event starts after 60 days
+treatment_data <- treatment_data %>%
+  arrange(id_animal, date_event) %>%  # Sort by animal and date
   group_by(id_animal) %>%
   mutate(
-   prev_event_date = lag(date_event), #previous date is the entry prior to date_event, looks by animal because of group_by
-    prev_protocol = lag(protocols_remaining_after_numbers1),  # Check previous protocol
+    prev_event_date = lag(date_event),
     days_since_last_event = as.numeric(date_event - prev_event_date),
-    retreated_within_14_days = ifelse(between(days_since_last_event, 14, 21), TRUE, FALSE)
-   #rewrote to count as retreatment if after 14 days since initial MAST event but within 21 days. 
+    new_treatment_period = ifelse(is.na(days_since_last_event) | days_since_last_event > 60, 1, 0), 
+    treatment_period = cumsum(new_treatment_period)  # Assign period ID
   ) %>%
   ungroup()
 
-# Create a new dataset with only retreatments as a data check
+# Identify first treatment in each treatment period
+treatment_data <- treatment_data %>%
+  group_by(id_animal, treatment_period) %>%
+  mutate(
+    first_treatment = first(protocols_remaining_after_numbers1),  
+    first_treatment_date = first(date_event)
+  ) %>%
+  ungroup()
+
+# Identify retreatments within 14-21 days of the first treatment in the same treatment period
+treatment_data <- treatment_data %>%
+  arrange(id_animal, date_event) %>%
+  group_by(id_animal, treatment_period) %>%
+  mutate(
+    prev_protocol = lag(protocols_remaining_after_numbers1),
+    days_since_first_treatment = as.numeric(date_event - first_treatment_date),
+    is_retreatment = ifelse(
+      between(days_since_first_treatment, 14, 21) & prev_protocol == first_treatment, 
+      TRUE, 
+      FALSE
+    )
+  ) %>%
+  ungroup()
+
+# Create dataset with only valid retreatments
 retreatment_data <- treatment_data %>%
-  filter(retreated_within_14_days == TRUE)
- 
-# Count retreatments by protocol of the initial treatment
-retreatment_counts <- treatment_data %>%
-  filter(retreated_within_14_days == TRUE) %>%
-  group_by(prev_protocol) %>%
-  summarise(num_retreatments = n()) %>%
-  rename(protocol = prev_protocol)  # Rename column for clarity
+  filter(is_retreatment == TRUE)
 
-# Count total events by protocol
+# Count retreatments by first treatment protocol
+retreatment_counts <- retreatment_data %>%
+  count(first_treatment, name = "retreatment_events") %>%
+  rename(protocol = first_treatment)
+
+# Count total first-time treatments
 total_events <- treatment_data %>%
-  count(protocols_remaining_after_numbers1, name = "total_events")
-
-# Count retreatments (events that occurred within 14 - 21 days)
-retreatment_counts <- treatment_data %>%
-  filter(retreated_within_14_days == TRUE) %>%
-  count(protocols_remaining_after_numbers1, name = "retreatment_events")
+  filter(protocols_remaining_after_numbers1 == first_treatment) %>%
+  count(first_treatment, name = "total_events") %>%
+  rename(protocol = first_treatment)
 
 # Merge total events with retreatments
-retreatment_data <- left_join(retreatment_counts, total_events, by = "protocols_remaining_after_numbers1") %>%
+retreatment_summary <- left_join(retreatment_counts, total_events, by = "protocol") %>%
   mutate(retreatment_percentage = (retreatment_events / total_events) * 100)
 
 # Plot retreatment percentage per protocol
-ggplot(retreatment_data, aes(x = protocols_remaining_after_numbers1, 
-                             y = retreatment_percentage, 
-                             fill = protocols_remaining_after_numbers1)) +
+ggplot(retreatment_summary, aes(x = protocol, 
+                                y = retreatment_percentage, 
+                                fill = protocol)) +
   geom_bar(stat = "identity", width = 0.5, color = "black") +
-   geom_text(aes(label = paste0(round(retreatment_percentage, 1), "%")),  # Add percentage labels
-            vjust = -0.5, size = 3, fontface = "bold") +  # Adjust label position & size
-   scale_fill_manual(values = c("AHVmastitis" = "purple", "SpectraMastLC" = "pink"))+
+  geom_text(aes(label = paste0(round(retreatment_percentage, 1), "%")),  
+            vjust = -0.5, size = 3, fontface = "bold") +  
+  scale_fill_manual(values = c("AHVmastitis" = "purple", "SpectraMastLC" = "pink")) +
   theme_minimal() +
   labs(
-    title = "Retreatments as % of Total Treatments by Protocol",
+    title = "Retreatments as % of Total First Treatments by Protocol",
     x = "Treatment Protocol",
     y = "Retreatment Percentage (%)",
     fill = "Protocol"
@@ -181,6 +229,7 @@ ggplot(retreatment_data, aes(x = protocols_remaining_after_numbers1,
     text = element_text(size = 12),
     legend.position = "top"
   )
+
 
 ```
 
@@ -269,34 +318,6 @@ ggplot(retreatment_rates, aes(x = factor(lact_group),  # Lactation group as cate
   )
 
 
-```
-
-# Mastitis by DIM
-
-```{r}
-library(ggplot2)
-library(dplyr)
-
-mast_dim <- events_formatted %>% 
-  filter(event == "MAST") %>% 
-  select(id_animal, event, dim_event, lact_group, protocols_remaining_after_letters1)  
-
-graph <- ggplot(mast_dim, aes(x = dim_event)) +
-  geom_histogram(binwidth = 10, fill = "steelblue", color = "black", alpha = 0.7) +
-  theme_minimal(base_size = 14) +
-  facet_wrap(vars(event), ncol = 1, scales = "free") +
-  labs(
-    title = "Distribution of Mastitis Events Over Days in Milk",
-    x = "Days in Milk",
-    y = "Count"
-  ) +
-  theme(
-    panel.grid.major = element_line(color = "gray80"),
-    panel.grid.minor = element_blank(),
-    strip.text = element_text(size = 14, face = "bold")
-  )
-
-print(graph)
 ```
 
 # 
