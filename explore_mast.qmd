@@ -32,40 +32,37 @@ summarize_events<-events_formatted |>
          Event = factor(event))
 ```
 
-# Summary Graph
+# Mastitis by DIM
 
-The most commonly used protocols to treat mastitis are SpectraMastLC, Today, and AHV. The most common culture result is *staph. Aureus*.
+A summary of the total mastitis events distributed over DIM.
 
 ```{r}
-#| fig-height: 8
-# count y vars
+library(ggplot2)
+library(dplyr)
 
-facet_order <- summarize_events %>%
-  group_by(event_type) %>%
-  summarise(n_y = n_distinct(event)) %>%
-  arrange(desc(n_y)) %>%  # Order by most y categories
-  pull(event_type)
+mast_dim <- events_formatted %>% 
+  filter(event == "MAST") %>% 
+  select(id_animal, event, dim_event, lact_group, protocols_remaining_after_letters1)  
 
-# order events
-summarize_events <- summarize_events %>%
-  mutate(event_type = fct_reorder(event_type, count_rows, .fun = sum, .desc = FALSE)) 
+graph <- ggplot(mast_dim, aes(x = dim_event)) +
+  geom_histogram(binwidth = 10, fill = "steelblue", color = "black", alpha = 0.7) +
+  theme_minimal(base_size = 14) +
+  facet_wrap(vars(event), ncol = 1, scales = "free") +
+  labs(
+    title = "Distribution of Mastitis Events Over Days in Milk",
+    x = "Days in Milk",
+    y = "Count"
+  ) +
+  theme(
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(size = 14, face = "bold")
+  )
 
-  ggplot(summarize_events)+
-  geom_bar(aes(x = event_type,
-               y = count_rows, fill = event_type), stat = "identity")+
-  #facet_wrap(factor(event, levels = facet_order) ~., scales = 'free')+
-    facet_wrap(vars(event), ncol = 1, scales = "free")+
-  coord_flip()+
-  scale_fill_viridis_d()+
-  theme_minimal()+
-  labs(x = "",
-       y = "Row Count")+
-  theme(legend.position = "none",
-        # axis.text.y = element_text(size = 6)
-        )
+print(graph)
 ```
 
-# Mastitis Events by Treatment Protocol
+# Summary Graph of Mastitis by Protocol Used
 
 Percentage of mastitis events that were treated by each protocol.
 
@@ -105,40 +102,13 @@ ggplot(mastitis_events) +
   )
 ```
 
-# Mastitis by DIM
-
-```{r}
-library(ggplot2)
-library(dplyr)
-
-mast_dim <- events_formatted %>% 
-  filter(event == "MAST") %>% 
-  #filter(date_event > "2024-01-01")
-  select(id_animal, event, dim_event, lact_group, protocols_remaining_after_letters1)  
-
-graph <- ggplot(mast_dim, aes(x = dim_event)) +
-  geom_histogram(binwidth = 10, fill = "steelblue", color = "black", alpha = 0.7) +
-  theme_minimal(base_size = 14) +
-  facet_wrap(vars(event), ncol = 1, scales = "free") +
-  labs(
-    title = "Distribution of Mastitis Events Over Days in Milk",
-    x = "Days in Milk",
-    y = "Count"
-  ) +
-  theme(
-    panel.grid.major = element_line(color = "gray80"),
-    panel.grid.minor = element_blank(),
-    strip.text = element_text(size = 14, face = "bold")
-  )
-
-print(graph)
-```
-
 # Treatment Success
 
-Cows that were initially treated with SpectraMastLC were retreated for mastitis within 14 - 21 days at a rate of 5.6%. Cows that were initially treated with AHV were retreated within 14 - 21 days at a rate of 4.5%.
+Re-treatment was defined as a new mastitis event occurring within 14 - 21 days of the first mastitis event. Events that were \> 60 days from the first event are considered "new" first treatments and subsequent events within 14 - 21 days later also count as re-treatments.
 
-This was created with the idea that with a gap of 14, animals that were retreated within 14 days are being misidentified as they have not completed their treatment interval.
+Cows that were initially treated with SpectraMastLC were retreated for mastitis 4.9%. Cows that were initially treated with AHV were retreated at a rate of 5.1%.
+
+This program considers animals that were retreated within 14 days of the initial event as misidentified since they have not completed their treatment interval. These events did not count as a re-treatment.
 
 ```{r}
 library(ggplot2)
@@ -154,7 +124,6 @@ treatment_data <- events_formatted %>%
   filter(event %in% c("MAST", "CULTURE"), (str_starts(protocols_remaining_after_numbers1, "AHVmast") |
          str_starts(protocols_remaining_after_numbers1, "Spec"))) # Only relevant treatments
   
-
 # Identify treatment periods where a new first event starts after 60 days
 treatment_data <- treatment_data %>%
   arrange(id_animal, date_event) %>%  # Sort by animal and date
@@ -246,7 +215,7 @@ total_treatments_lact <- treatment_data %>%
 
 # Count retreatments by lactation group within 14 days
 retreatments_lact <- treatment_data %>%
-  filter(retreated_within_14_days == TRUE) %>%
+  filter(is_retreatment == TRUE) %>%
   count(lact_group, name = "retreatment_events")
 
 # Merge datasets & calculate retreatment percentage
@@ -290,7 +259,7 @@ total_treatments <- treatment_data %>%
 
 # Count retreatments by protocol & lactation group (within 14 days)
 retreatments <- treatment_data %>%
-  filter(retreated_within_14_days == TRUE) %>%
+  filter(is_retreatment == TRUE) %>%
   count(protocols_remaining_after_numbers1, lact_group, name = "retreatment_events")
 
 # Merge datasets & calculate retreatment percentage
