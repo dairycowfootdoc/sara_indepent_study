@@ -299,10 +299,10 @@ ggplot(retreatment_rates, aes(x = factor(lact_group),  # Lactation group as cate
 <div>
 
 ```{r}
-# #reset treatment_data just in case
-# treatment_data <- events_formatted %>%
-#   filter(event %in% c("MAST"), (str_starts(protocols_remaining_after_numbers1, "AHVmast") |
-#          str_starts(protocols_remaining_after_numbers1, "Spec"))) # Only relevant treatments
+
+#reset only_first_treatments to be safe
+only_first_treatments <- first_treatment_data %>%
+  filter(date_event == first_treatment_date)
 
 # Create protocol labels
 only_first_treatments <- only_first_treatments %>%
@@ -364,7 +364,7 @@ km <- ggsurvplot(fitKM,
                  # Axis Titles & Limits
                  xlab = "Days to Leaving after Treatment",  
                  ylab = "Percentage of Healthy Cows",  
-                 xlim = c(0, 180),            # Set x-axis limit
+                 xlim = c(0, 210),            # Set x-axis limit
                  ylim = c(50, 100),           # Start y-axis at 50% for clarity
                  break.time.by = 30,          # Tick marks every 30 days
                  
