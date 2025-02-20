@@ -152,6 +152,9 @@ first_treatment_data <- first_treatment_data %>%
   ) %>%
   ungroup()
 
+only_first_treatments <- first_treatment_data %>%
+  filter(date_event == first_treatment_date)
+
 # Identify retreatments within 14-21 days of the first treatment in the same treatment period
 retreatment_data <- first_treatment_data %>%
   arrange(id_animal, date_event) %>%
@@ -296,13 +299,13 @@ ggplot(retreatment_rates, aes(x = factor(lact_group),  # Lactation group as cate
 <div>
 
 ```{r}
-#reset treatment_data just in case
-treatment_data <- events_formatted %>%
-  filter(event %in% c("MAST"), (str_starts(protocols_remaining_after_numbers1, "AHVmast") |
-         str_starts(protocols_remaining_after_numbers1, "Spec"))) # Only relevant treatments
+# #reset treatment_data just in case
+# treatment_data <- events_formatted %>%
+#   filter(event %in% c("MAST"), (str_starts(protocols_remaining_after_numbers1, "AHVmast") |
+#          str_starts(protocols_remaining_after_numbers1, "Spec"))) # Only relevant treatments
 
 # Create protocol labels
-treatment_data <- treatment_data %>%
+only_first_treatments <- only_first_treatments %>%
   mutate(
     protocol_label = case_when(
       str_starts(protocols_remaining_after_numbers1, "AHV") ~ "AHV",
@@ -320,7 +323,7 @@ exit_cows <-read_parquet('data/intermediate_files/events_formatted.parquet') |>
   ungroup()
 
 #par down treatment data
-mastitis_data <- treatment_data %>%
+mastitis_data <- only_first_treatments %>%
   select(id_animal, event, date_event, protocol_label)
 
 # Merge exit dates into the original dataset
