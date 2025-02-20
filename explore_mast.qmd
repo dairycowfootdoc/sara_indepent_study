@@ -22,6 +22,11 @@ library(survminer)
 library(stringr)
 library(viridis)
 library(RColorBrewer)
+library(flextable)
+library(officer)
+library(gtsummary)
+library(cardx)
+library(htmltools)
 
 source('functions/DT_base.R') #functions to parse remarks and protocols
 
@@ -47,9 +52,13 @@ animals <- read_parquet('data/intermediate_files/animals.parquet')
 pull_date <- unique(animals$data_pull_date_max)
 ```
 
-# Mastitis by DIM
+# Skyview Dairy
 
-A summary of the total mastitis events distributed over DIM.
+Comparison of AHV and SpectraMastLC as first treatment for mastitis.
+
+## Mastitis by DIM
+
+A summary of the total mastitis events distributed over days in milk.
 
 ```{r}
 
@@ -75,9 +84,9 @@ graph <- ggplot(mast_dim, aes(x = dim_event)) +
 print(graph)
 ```
 
-# Summary Graph of Mastitis by Protocol Used
+## Summary Graph of Mastitis by Protocol Used
 
-Percentage of mastitis events that were treated by each protocol.
+Percentage of mastitis events that were treated by each protocol.Over 50% of cases of mastitis were treated with SpectraMastLC followed by over 25% being treated with AHV.
 
 ```{r}
 
@@ -383,29 +392,65 @@ print(km)
 
 # time to mast table----
 
-# fit_farm <- survfit(Surv(censordat, nextrmlame) ~ lctgp, data = trimtolame)
-# # 
-# # farm
-# tbl_time_2_mast_farm <- tbl_survfit(fit_farm,
-#                                     times = c(90, 120, 150, 180),
-#                                     label = " ",
-#                                     reverse = TRUE,
-#                                     label_header = "{time} Days") %>% 
-#   as_flex_table() %>% # makes formatting and pdf better
-#   add_header_row(top = TRUE,
-#                  values = c("Protocol",
-#                             "Days",
-#                             "",
-#                             "",
-#                             "")) %>% 
-#   bold(i = 1, bold = TRUE, part = "header") %>% # bolds headers
-#   bold(i = 2, bold = TRUE, part = "header") %>% 
-#   merge_at(i = 1:2, j = 1, part = "header") %>% #merges 1st row
-#   merge_at(i = 1, j = 2:5, part = "header") %>% # merges top columns
-#   autofit() %>% 
-#   fit_to_width(max_width= 6) |> 
-#   delete_rows( i= 1, part = "body") |> 
-#   hline_bottom(part = "body")
+fit_farm <- survfit(Surv(days_until_exit, event_occurred) ~ protocol_label, data = mastitis_data_final)
+
+tbl_time_2_mast_farm <- tbl_survfit(fit_farm,
+                                    times = c(90, 120, 150, 180),
+                                    label = " ",
+                                    reverse = TRUE,
+                                    label_header = "{time} Days") %>%
+  as_flex_table() %>% # makes formatting and pdf better
+  add_header_row(top = TRUE,
+                 values = c("Protocol",
+                            "Days",
+                            "",
+                            "",
+                            "")) %>%
+  bold(i = 1, bold = TRUE, part = "header") %>% # bolds headers
+  bold(i = 2, bold = TRUE, part = "header") %>%
+  merge_at(i = 1:2, j = 1, part = "header") %>% #merges 1st row
+  merge_at(i = 1, j = 2:5, part = "header") %>% # merges top columns
+  autofit() %>%
+  fit_to_width(max_width= 6) |>
+  delete_rows( i= 1, part = "body") |>
+  hline_bottom(part = "body")
+
+
+# Assume your flextable object is stored in tbl_time_2_mast_farm.
+# If needed, convert it explicitly to a flextable object.
+# Directly apply formatting to your existing flextable
+ft <- tbl_time_2_mast_farm %>%
+  # Set custom column headers
+  set_header_labels(label   = "Protocol",
+                    stat_1  = "90 Days",
+                    stat_2  = "120 Days",
+                    stat_3  = "150 Days",
+                    stat_4  = "180 Days") %>%
+  # Merge header row if needed
+  merge_h(part = "header") %>%
+  # Apply a cleaner theme
+  theme_booktabs() %>%
+  # Style the header
+  bg(bg = "#E6E6E6", part = "header") %>%
+  bold(part = "header") %>%
+  # Align text and set font sizes
+  align(align = "center", part = "all") %>%
+  fontsize(size = 10, part = "all") %>%
+  # Autofit column widths
+  autofit() %>%
+  # Remove all default borders
+  border_remove() %>%
+  # Add subtle inner borders
+  border_inner_h(border = fp_border(color = "gray", width = 0.5), part = "body") %>%
+  border_inner_v(border = fp_border(color = "gray", width = 0.5), part = "body") %>%
+  # Add a solid outer border
+  border_outer(border = fp_border(color = "black", width = 1)) %>%
+  # Add a table caption
+  set_caption("Predicted Risk of Culling at Specific Time Points")
+
+# Render in the RStudio viewer or browser
+browsable(ft)
+
 ```
 
 </div>
