@@ -17,19 +17,32 @@ library(tidyverse)
 library(arrow)
 library(dtplyr)
 library(DT)
+library(survival)
+library(survminer)
+library(stringr)
 
 source('functions/DT_base.R') #functions to parse remarks and protocols
 
-events_formatted<-read_parquet('data/intermediate_files/events_formatted.parquet') |> 
+events_formatted <-read_parquet('data/intermediate_files/events_formatted.parquet') |> 
   filter(event %in% c("MAST", "CULTURE"))%>%
   filter(date_event > "2024-01-01")
 
+#Pull the wanted information into a new data set, only pull MAST events that used AHV or Spec
+treatment_data <- events_formatted %>%
+  filter(event %in% c("MAST"), (str_starts(protocols_remaining_after_numbers1, "AHVmast") |
+         str_starts(protocols_remaining_after_numbers1, "Spec"))) # Only relevant treatments
+
 summarize_events<-events_formatted |> 
+  filter(date_event > "2024-01-01")|>
   group_by(event, protocols_remaining_after_numbers1) |> 
   summarize(count_rows=sum(n()))|>
   ungroup()%>%
   mutate(event_type = factor(protocols_remaining_after_numbers1), 
          Event = factor(event))
+
+animals <- read_parquet('data/intermediate_files/animals.parquet')
+
+pull_date <- unique(animals$data_pull_date_max)
 ```
 
 # Mastitis by DIM
@@ -37,12 +50,10 @@ summarize_events<-events_formatted |>
 A summary of the total mastitis events distributed over DIM.
 
 ```{r}
-library(ggplot2)
-library(dplyr)
 
 mast_dim <- events_formatted %>% 
   filter(event == "MAST") %>% 
-  select(id_animal, event, dim_event, lact_group, protocols_remaining_after_letters1)  
+  select(id_animal, event, dim_event, lact_group, date_event, protocols_remaining_after_letters1)  
 
 graph <- ggplot(mast_dim, aes(x = dim_event)) +
   geom_histogram(binwidth = 10, fill = "steelblue", color = "black", alpha = 0.7) +
@@ -67,9 +78,6 @@ print(graph)
 Percentage of mastitis events that were treated by each protocol.
 
 ```{r}
-library(ggplot2)
-library(dplyr)
-library(forcats)
 
 # Filter for only Mastitis events within the last year
 mastitis_events <- summarize_events %>%
@@ -111,21 +119,9 @@ Cows that were initially treated with SpectraMastLC were retreated for mastitis 
 This program considers animals that were retreated within 14 days of the initial event as misidentified since they have not completed their treatment interval. These events did not count as a re-treatment.
 
 ```{r}
-library(ggplot2)
-library(dplyr)
-library(stringr)
 
-# Ensure date_event is in Date format
-events_formatted <- events_formatted %>%
-  mutate(date_event = as.Date(date_event))  # Convert if not already Date type
-
-#Pull the wanted information into a new data set, only pull MAST events that used AHV or Spec
-treatment_data <- events_formatted %>%
-  filter(event %in% c("MAST"), (str_starts(protocols_remaining_after_numbers1, "AHVmast") |
-         str_starts(protocols_remaining_after_numbers1, "Spec"))) # Only relevant treatments
-  
 # Identify treatment periods where a new first event starts after 60 days
-treatment_data <- treatment_data %>%
+first_treatment_data <- treatment_data %>%
   arrange(id_animal, date_event) %>%  # Sort by animal and date
   group_by(id_animal) %>%
   mutate(
@@ -137,7 +133,7 @@ treatment_data <- treatment_data %>%
   ungroup()
 
 # Identify first treatment in each treatment period
-treatment_data <- treatment_data %>%
+first_treatment_data <- first_treatment_data %>%
   group_by(id_animal, treatment_period) %>%
   mutate(
     first_treatment = first(protocols_remaining_after_numbers1),  
@@ -146,7 +142,7 @@ treatment_data <- treatment_data %>%
   ungroup()
 
 # Identify retreatments within 14-21 days of the first treatment in the same treatment period
-treatment_data <- treatment_data %>%
+retreatment_data <- first_treatment_data %>%
   arrange(id_animal, date_event) %>%
   group_by(id_animal, treatment_period) %>%
   mutate(
@@ -161,7 +157,7 @@ treatment_data <- treatment_data %>%
   ungroup()
 
 # Create dataset with only valid retreatments
-retreatment_data <- treatment_data %>%
+retreatment_data <- retreatment_data %>%
   filter(is_retreatment == TRUE)
 
 # Count retreatments by first treatment protocol
@@ -170,7 +166,7 @@ retreatment_counts <- retreatment_data %>%
   rename(protocol = first_treatment)
 
 # Count total first-time treatments
-total_events <- treatment_data %>%
+total_events <- first_treatment_data %>%
   filter(protocols_remaining_after_numbers1 == first_treatment) %>%
   count(first_treatment, name = "total_events") %>%
   rename(protocol = first_treatment)
@@ -205,16 +201,13 @@ ggplot(retreatment_summary, aes(x = protocol,
 # Treatment Success by Lactation Group
 
 ```{r}
-library(dplyr)
-library(ggplot2)
-library(tidyr)  # Needed for replace_na()
 
 # Count total treatments by lactation group
-total_treatments_lact <- treatment_data %>%
+total_treatments_lact <- first_treatment_data %>%
   count(lact_group, name = "total_events")
 
 # Count retreatments by lactation group within 14 days
-retreatments_lact <- treatment_data %>%
+retreatments_lact <- retreatment_data %>%
   filter(is_retreatment == TRUE) %>%
   count(lact_group, name = "retreatment_events")
 
@@ -250,15 +243,13 @@ ggplot(retreatment_rates, aes(x = factor(lact_group),
 # Treatment Success by Lactation Group and Protocol
 
 ```{r}
-library(dplyr)
-library(ggplot2)
 
 # Count total treatments by protocol & lactation group
-total_treatments <- treatment_data %>%
+total_treatments <- first_treatment_data %>%
   count(protocols_remaining_after_numbers1, lact_group, name = "total_events")
 
 # Count re-treatments by protocol & lactation group (within 14 days)
-retreatments <- treatment_data %>%
+retreatments <- retreatment_data %>%
   filter(is_retreatment == TRUE) %>%
   count(protocols_remaining_after_numbers1, lact_group, name = "retreatment_events")
 
@@ -294,10 +285,6 @@ ggplot(retreatment_rates, aes(x = factor(lact_group),  # Lactation group as cate
 <div>
 
 ```{r}
-library(survival)
-library(survminer)
-library(dplyr)
-library(stringr)
 
 # Create protocol labels
 treatment_data <- treatment_data %>%
@@ -310,22 +297,27 @@ treatment_data <- treatment_data %>%
   )
 
 # Find cows that have an exit event (SOLD or DIED) in orginial event data
-exit_cows <- events_formatted %>%
+exit_cows <-read_parquet('data/intermediate_files/events_formatted.parquet') |> 
+  filter(date_event > "2024-01-01") %>%
   filter(event %in% c("SOLD", "DIED")) %>%
   group_by(id_animal) %>%
   summarise(date_exit = min(date_event, na.rm = TRUE)) %>%  # Get the earliest exit date
   ungroup()
 
 #par down treatment data
-mastitis_data_final <- treatment_data %>%
+mastitis_data <- treatment_data %>%
   select(id_animal, event, date_event, protocol_label)
 
 # Merge exit dates into the original dataset
-mastitis_data_final <- mastitis_data_final %>%
-  left_join(exit_cows, by = "id_animal")%>%  # Add date_exit for cows that have left
-    mutate(
-    days_until_exit = as.numeric(date_exit - date_event),  # Compute days until exit
-    event_occurred = ifelse(!is.na(date_exit), 1, 0)  # 1 = exited, 0 = still in herd
+mastitis_data_final <- mastitis_data %>%
+  left_join(exit_cows, by = "id_animal") %>%
+  mutate(
+    date_exit = coalesce(date_exit, pull_date),  # Assign missing date_exit values to pull_date
+    date_exit = as.Date(date_exit),  # Ensure date_exit remains a Date
+    date_event = as.Date(date_event), # Ensure date_event is a Date before calculations
+    days_until_exit = as.numeric(difftime(date_exit, date_event, units = "days")),
+    event_occurred = ifelse(!is.na(date_exit) & date_exit != pull_date, 1, 0),  # 1 = exited, 0 = still in herd
+    protocol_label = factor(protocol_label)  # Ensure protocol_label is a factor
   )
 
 # Fit Kaplan-Meier survival model
@@ -341,8 +333,8 @@ km <- ggsurvplot(fitKM,
                  censor = FALSE,
                  fun = "pct",
                  size = 1,
-                 linetype = c(1, 2, 3), # Specify dashed lines for each group
-                 palette = c("#440154ff", "#3b528bff", "#fde725ff"),
+                 linetype = c(1, 2), # Specify dashed lines for each group
+                 palette = c("#3b528bff", "#fde725ff"),
                  legend = "bottom",
                  legend.title = "Protocol",
                  #legend.labs = protocol_label,
