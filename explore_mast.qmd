@@ -20,6 +20,8 @@ library(DT)
 library(survival)
 library(survminer)
 library(stringr)
+library(viridis)
+library(RColorBrewer)
 
 source('functions/DT_base.R') #functions to parse remarks and protocols
 
@@ -285,6 +287,10 @@ ggplot(retreatment_rates, aes(x = factor(lact_group),  # Lactation group as cate
 <div>
 
 ```{r}
+#reset treatment_data just in case
+treatment_data <- events_formatted %>%
+  filter(event %in% c("MAST"), (str_starts(protocols_remaining_after_numbers1, "AHVmast") |
+         str_starts(protocols_remaining_after_numbers1, "Spec"))) # Only relevant treatments
 
 # Create protocol labels
 treatment_data <- treatment_data %>%
@@ -324,26 +330,49 @@ mastitis_data_final <- mastitis_data %>%
 fitKM <- survfit(Surv(days_until_exit, event_occurred) ~ protocol_label, data = mastitis_data_final)
 
 #Create a Kaplan-Meier survival plot using 'ggsurvplot'
-# most of this makes them pretty.
-# you can just run the first line and it will create a graph)
+
+# Generate colors using cividis palette
+n_protocols <- length(unique(mastitis_data_final$protocol_label))  # Ensure enough colors
+colors <- brewer.pal(4, "Set1") 
+
+# Create the Kaplan-Meier survival plot with enhanced aesthetics
 km <- ggsurvplot(fitKM, 
-                 pval = FALSE,
-                 ncol = 2,
-                 conf.int = TRUE,
-                 censor = FALSE,
-                 fun = "pct",
-                 size = 1,
-                 linetype = c(1, 2), # Specify dashed lines for each group
-                 palette = c("#3b528bff", "#fde725ff"),
-                 legend = "bottom",
-                 legend.title = "Protocol",
-                 #legend.labs = protocol_label,
-                 xlab = "Days to Leaving after Treatment",
-                 ylab = "Percentage of Healthy Cows",
-                 xlim = c(0, 180),
-                 ylim = c(50, 100),
-                 break.time.by = 30,
-                 short.panel.labs = TRUE)
+                 conf.int = TRUE,              # Show confidence intervals
+                 censor = FALSE,               # Hide censor marks for cleaner look
+                 fun = "pct",                  # Display as percentage
+                 size = 1.2,                   # Increase line thickness for better visibility
+                 linetype = c(1, 2),           # Use different line styles
+                 palette = colors,             # Apply cividis color scheme
+                 
+                 # Legend & Labels
+                 legend = "bottom",            # Move legend below plot
+                 legend.title = "Treatment Protocol",  
+                 legend.labs = levels(mastitis_data_final$protocol_label),  
+                 
+                 # Axis Titles & Limits
+                 xlab = "Days to Leaving after Treatment",  
+                 ylab = "Percentage of Healthy Cows",  
+                 xlim = c(0, 180),            # Set x-axis limit
+                 ylim = c(50, 100),           # Start y-axis at 50% for clarity
+                 break.time.by = 30,          # Tick marks every 30 days
+                 
+                 # Theme & Formatting
+                 ggtheme = theme_minimal(base_size = 14) + 
+                   theme(
+                     axis.title = element_text(face = "bold", size = 16),  
+                     axis.text = element_text(size = 14),  
+                     legend.text = element_text(size = 12),
+                     legend.title = element_text(face = "bold", size = 14),
+                     panel.grid.major = element_line(color = "gray80"),  
+                     panel.grid.minor = element_blank()
+                   )
+)
+
+# Print the plot
+print(km)
+
+
+
   # Set the fill colors and linetypes for each group in the legend and overide
   # the default where lines and colours are separate
   # to get codes library(RColorBrewer) brewer.pal(n=5,"Accent")
@@ -354,11 +383,10 @@ km <- ggsurvplot(fitKM,
 
 # time to mast table----
 
-# fit_farm <- survfit(Surv(censordat, nextrmlame) ~ lctgp, 
-#                     data = trimtolame)
-# 
+# fit_farm <- survfit(Surv(censordat, nextrmlame) ~ lctgp, data = trimtolame)
+# # 
 # # farm
-# tbl_time_2_lame_farm <- tbl_survfit(fit_farm,
+# tbl_time_2_mast_farm <- tbl_survfit(fit_farm,
 #                                     times = c(90, 120, 150, 180),
 #                                     label = " ",
 #                                     reverse = TRUE,
