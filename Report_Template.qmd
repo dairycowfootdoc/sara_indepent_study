@@ -28,6 +28,8 @@ library(gtsummary)
 library(cardx)
 library(htmltools)
 library(lubridate)
+library(httr)
+library(jsonlite)
 
 
 # Initialization and organization of initial data sets
@@ -65,6 +67,7 @@ lame_data <- events_formatted %>%
 
 # Pull production data from dairy comp and re-format:
 # EVENTS ID BDAT LACT\4S730 (730 = last 2 years of data, change based on goals)
+# Save in data/intermediate_files/production_data. It should be the only file in there
 
 # Define file path
 production_file <- "data/intermediate_files/production_data/production.parquet"
@@ -75,7 +78,7 @@ production_data <- read_parquet(production_file)
 # Reformat the data
 production_data <- production_data %>%
   mutate(
-    id_animal = paste0(as.character(ID), "_", as.character(BDAT))  # Ensure merging works
+    id_animal = paste0(as.character(ID), "_", as.character(BDAT)) #Create id_animal
   ) %>%
   rename(id = ID) %>%  
   rename(date_birth = BDAT)%>%
@@ -83,14 +86,13 @@ production_data <- production_data %>%
   mutate(date_test = mdy(date_test))%>% # Convert to Date (Adjust format if needed)
   relocate(id_animal, .before = everything())  # Move id_animal to the first column
 
-# Merge Production data with events_formatted data
-
-
 
 
 ```
 
 # Herd Summary
+
+Average monthly milk production:
 
 ```{r}
 # Milk production by month overtime:
@@ -128,5 +130,86 @@ ggplot(monthly_data, aes(x = month, y = avg_milk)) +
        y = "Average Milk Production (L)") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate month labels for readability
+
+```
+
+```{r}
+# Plot THI over Milk prodcution
+
+# Pull weather data from VisualConnections API. You need an API key saved as an environmental variable in your computer
+
+get_weather_data <- function(location, date_range = "lastyear", api_key = NULL) {
+  if (is.null(api_key) || api_key == "") {
+    message("API key is missing, skipping weather data retrieval.")
+    return(NULL)  # Return NULL if no API key is found
+  }
+  
+  url <- paste0("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/",
+                location, "/", date_range, "?unitGroup=us&key=", api_key)
+  
+  response <- GET(url)
+  
+  if (status_code(response) == 200) {
+    data <- content(response, "text", encoding = "UTF-8")
+    weather_data <- fromJSON(data)
+    return(weather_data)
+  } else {
+    stop("Request failed")
+  }
+}
+
+# Example usage
+location <- "55350"  # Zip code for the location
+date_range <- "lastyear"  # Use 'lastyear' to pull data from the last year
+
+# Check for the API key in environment variables
+api_key <- Sys.getenv("VISUAL_CROSSING_API_KEY")
+
+# Get weather data only if the API key is available
+weather_data_raw <- if (!is.null(api_key) && api_key != "") {
+  get_weather_data(location, date_range, api_key)
+} else {
+  NULL  # If API key is missing, skip fetching weather data
+}
+
+# If weather data was successfully retrieved, process it
+if (!is.null(weather_data_raw)) {
+  
+  # Convert the weather data (assuming it is under 'days')
+  weather_data_raw <- as.data.frame(weather_data_raw$days)
+
+  # Select relevant columns and convert the 'date' column to Date format
+  weather_data <- weather_data_raw %>%
+    select(datetime, temp, humidity) %>%
+    mutate(datetime = as.Date(datetime))%>%
+    rename(date_weather = datetime)%>%
+    mutate(THI = temp - (0.55 - 0.0055 * humidity) * (temp - 58)) 
+}
+# color scale
+weather_data <- weather_data %>%
+  mutate(THI_color = case_when(
+    THI >= 70 ~ "red",       # Very high THI (above 70) - red
+    THI >= 60 ~ "orange",    # High THI (between 60 and 70) - orange
+    THI >= 50 ~ "yellow",    # Moderate THI (between 50 and 60) - yellow
+    TRUE ~ "green"           # Low THI (below 50) - green
+  ))
+
+weather_data <- weather_data %>%
+  mutate(next_date = lead(date_weather),   # Get the next date for each row (for segment plotting)
+         next_THI = lead(THI),     # Get the next THI value for each row
+         next_THI_color = lead(THI_color))  # Get the next THI color
+
+# Plot with color-changing line
+ggplot(weather_data, aes(x = date_weather, y = THI)) +
+  geom_segment(aes(xend = next_date, yend = next_THI, color = next_THI_color), size = 1) +  # Line segments with color
+  labs(title = "Thermal Heat Index (THI) Over Time",
+       x = "Date",
+       y = "THI") +
+  scale_color_identity() +  # Use color values directly from the THI_color column
+  theme_minimal() +  # Minimal theme for a clean look
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+ 
+
+
 
 ```
