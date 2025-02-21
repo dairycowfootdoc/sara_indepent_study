@@ -2,6 +2,10 @@
 title: "Disease Template"
 format: html
 editor: source
+execute:
+    echo: false
+    message: false
+    warning: false
 ---
 
 ```{r}
@@ -239,6 +243,7 @@ ggplot(data = deno_2yrs, aes(x = `Lactation Group`, y = count_animals,
 
 ```
 
+# this needs work still
 
 ```{r}
 # to get months
