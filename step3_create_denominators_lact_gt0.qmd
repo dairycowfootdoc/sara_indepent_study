@@ -42,8 +42,9 @@ time_period_text<-'2024'
 date_start <- ymd("2024-01-01")
 date_end <- ymd("2024-12-31")
 
+
 # to get cows with dates in window
-test <- animal_lactations |>
+deno <- animal_lactations |>
   # create 5 lact groupp
   mutate (lact_group_5 = case_when(
       (lact_number == 0) ~ 'Heifer', 
@@ -68,7 +69,7 @@ test <- animal_lactations |>
          )
 
 # summarize total
-test_deno_total <- test |> 
+test_deno_total <- deno |> 
   group_by(time_period, id_animal) |>  
   # get rid of dup as only interested in total cows
   slice_tail() |> 
@@ -78,14 +79,14 @@ test_deno_total <- test |>
   mutate(lact_group = "Total")
 
 # create lactation groups denominators
-deno_all_lacts <- test |> 
+deno_all_lacts <- deno |> 
   group_by(time_period, lact_group_basic) |>  
   summarize(count_animals = n_distinct(id_animal), 
             count_lactations = n_distinct(id_animal_lact))|>
   ungroup()%>%
  rename(`Lactation Group` = lact_group_basic )
 
-deno_by_lact_group<-test|>
+deno_by_lact_group <- deno |>
   group_by(time_period,  lact_group)|>
   summarize(count_animals = n_distinct(id_animal), 
             count_lactations = n_distinct(id_animal_lact)) |>
@@ -93,7 +94,7 @@ deno_by_lact_group<-test|>
  rename(`Lactation Group` = lact_group)
 
 # create more lact groups
-deno_by_lact_group_5 <- test|>
+deno_by_lact_group_5 <- deno |>
   group_by(time_period,  lact_group_5)|>
   summarize(count_animals = n_distinct(id_animal), 
             count_lactations = n_distinct(id_animal_lact)) |>
@@ -106,6 +107,54 @@ herd_deno <- bind_rows(deno_all_lacts,
   distinct()
 
 ```
+```{r}
+# function for above to allow date range 
+
+fxn_create_deno <- function(label,
+                            date_start,
+                            date_end){
+  time_period_text <- label
+date_start <- ymd(date_start)
+date_end <- ymd(date_end)
+
+
+# to get cows with dates in window
+deno <- animal_lactations |>
+  select(id_animal, 
+         id_animal_lact, 
+         lact_number, lact_group, lact_group_basic,
+         date_fresh, date_archive, date_archive_max) |> 
+  # create 5 lact groupp
+  mutate (lact_group_5 = case_when(
+      (lact_number == 0) ~ 'Heifer', 
+      (lact_number == 1) ~ 'LACT 1',
+      (lact_number == 2) ~ 'LACT 2',
+      (lact_number == 3) ~ 'LACT 3',
+      (lact_number == 4) ~ 'LACT 4',
+      (lact_number >4) ~ 'LACT 5+',
+      .default = 'Unknown')
+  ) |> 
+  #this works for test, but we need to come back to it to see if can integrate into workflow
+  mutate(time_period = time_period_text) |> 
+  # removes heifers
+  filter(lact_number>0) |>  
+  filter(date_archive <= date_end | is.na(date_archive)) |> 
+  # filters cows fresh before start date
+  filter(date_fresh <= date_start & date_archive_max >= date_start |
+           date_fresh <= date_start & is.na(date_archive_max) |
+  # filters cows fresh after start date
+    date_fresh >= date_start & date_archive_max <= date_end|
+           date_fresh >= date_start & is.na(date_archive_max)
+         )
+}
+
+test <- fxn_create_deno(label = "2023",
+                        date_start = "2023-01-01",
+                        date_end = "2023-12-31")
+ 
+```
+
+
 
 
 ```{r}
