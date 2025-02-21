@@ -44,9 +44,21 @@ date_end <- ymd("2024-12-31")
 
 # to get cows with dates in window
 test <- animal_lactations |>
-  mutate(time_period = time_period_text) |> #this works for test, but we need to come back to it to see if can integrate into workflow
-  filter(lact_number>0) |>  # removes heifers
-  filter(date_archive <= date_end | is.na(date_archive)) |> #what about active cows? their date_archive is NA. also we want to use date_archive here.  date_archive_max isn't what you intuitively think it is. it is the max date_archive for this lactation, not for the cow.  I know it doesn't make sense but it happens, and if you don't use stuff like that you end up creating imaginary cows with joins.
+  # create 5 lact groupp
+  mutate (lact_group_5 = case_when(
+      (lact_number == 0) ~ 'Heifer', 
+      (lact_number == 1) ~ 'LACT 1',
+      (lact_number == 2) ~ 'LACT 2',
+      (lact_number == 3) ~ 'LACT 3',
+      (lact_number == 4) ~ 'LACT 4',
+      (lact_number >4) ~ 'LACT 5+',
+      .default = 'Unknown')
+  ) |> 
+  #this works for test, but we need to come back to it to see if can integrate into workflow
+  mutate(time_period = time_period_text) |> 
+  # removes heifers
+  filter(lact_number>0) |>  
+  filter(date_archive <= date_end | is.na(date_archive)) |> 
   # filters cows fresh before start date
   filter(date_fresh<= date_start & date_archive_max >= date_start |
            date_fresh<= date_start & is.na(date_archive_max) |
@@ -65,7 +77,7 @@ test_deno_total <- test |>
   summarise(cows_total = n()) |> 
   mutate(lact_group = "Total")
 
-#Nora's attempt - should be the same as Gerard's values
+# create lactation groups denominators
 deno_all_lacts <- test |> 
   group_by(time_period, lact_group_basic) |>  
   summarize(count_animals = n_distinct(id_animal), 
@@ -77,25 +89,21 @@ deno_by_lact_group<-test|>
   group_by(time_period,  lact_group)|>
   summarize(count_animals = n_distinct(id_animal), 
             count_lactations = n_distinct(id_animal_lact)) |>
-  ungroup()%>%
+  ungroup() %>%
  rename(`Lactation Group` = lact_group)
 
-deno_nora<-bind_rows(deno_all_lacts, deno_by_lact_group)
+# create more lact groups
+deno_by_lact_group_5 <- test|>
+  group_by(time_period,  lact_group_5)|>
+  summarize(count_animals = n_distinct(id_animal), 
+            count_lactations = n_distinct(id_animal_lact)) |>
+  ungroup() %>%
+  rename('Lactation Group' = lact_group_5)
 
-
-
-# by lact this won't equal totals due to multiple lact within year
-test_deno_total_lact <- test |> 
-  group_by(time_period, lact_group) |> 
-  summarise(cows_total = n()) |> 
-  ungroup()
-
-
-         
-test_sum <- bind_rows(test_deno_total, test_deno_total_lact) 
-
-waldo::compare(test_deno_total_lact, test_deno_total_ns)
-
+herd_deno <- bind_rows(deno_all_lacts, 
+                  deno_by_lact_group, 
+                  deno_by_lact_group_5) |> 
+  distinct()
 
 ```
 
