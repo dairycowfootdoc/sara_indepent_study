@@ -1,0 +1,132 @@
+---
+title: "Report_Template"
+editor: source
+format: 
+ html:
+   embed-resources: true
+   toc: true
+   toc-location: left
+execute:
+    echo: false
+    message: false
+    warning: false
+---
+
+```{r}
+library(tidyverse)
+library(arrow)
+library(dtplyr)
+library(DT)
+library(survival)
+library(survminer)
+library(stringr)
+library(viridis)
+library(RColorBrewer)
+library(flextable)
+library(officer)
+library(gtsummary)
+library(cardx)
+library(htmltools)
+library(lubridate)
+
+
+# Initialization and organization of initial data sets
+
+source('functions/DT_base.R') #functions to parse remarks and protocols
+
+# Intialize animal file and assign data pull date to an object for later use.
+animals <- read_parquet('data/intermediate_files/animals.parquet')
+
+pull_date <- unique(animals$data_pull_date_max)
+
+events_formatted <-read_parquet('data/intermediate_files/events_formatted.parquet') |> 
+  filter(date_event > "2023-02-12") # Modify (match with production data)
+
+# Pull the wanted information into a new data sets (double check in DC that the events are actually being recorded under these event names)
+
+mastitis_data <- events_formatted %>%
+  filter(event %in% c("MAST"))
+
+lame_data <- events_formatted %>%
+  filter(event %in% c("LAME"))
+
+# figure out how to pull out calf data
+
+
+# Create summarry data set that only includes counts of events 
+# summarize_events<-events_formatted |> 
+#   filter(date_event > "2024-01-01")|>
+#   group_by(event, protocols_remaining_after_numbers1) |> 
+#   summarize(count_rows=sum(n()))|>
+#   ungroup()%>%
+#   mutate(event_type = factor(protocols_remaining_after_numbers1), 
+#          Event = factor(event))
+
+
+# Pull production data from dairy comp and re-format:
+# EVENTS ID BDAT LACT\4S730 (730 = last 2 years of data, change based on goals)
+
+# Define file path
+production_file <- "data/intermediate_files/production_data/production.parquet"
+
+# Read Parquet file
+production_data <- read_parquet(production_file)
+
+# Reformat the data
+production_data <- production_data %>%
+  mutate(
+    id_animal = paste0(as.character(ID), "_", as.character(BDAT))  # Ensure merging works
+  ) %>%
+  rename(id = ID) %>%  
+  rename(date_birth = BDAT)%>%
+  rename(date_test = TestDate) %>%  
+  mutate(date_test = mdy(date_test))%>% # Convert to Date (Adjust format if needed)
+  relocate(id_animal, .before = everything())  # Move id_animal to the first column
+
+# Merge Production data with events_formatted data
+
+
+
+
+```
+
+# Herd Summary
+
+```{r}
+# Milk production by month overtime:
+
+# Remove * from Milk and convert to numeric
+monthly_data <- production_data %>%
+  mutate(MILK = as.numeric(gsub("\\*", "", MILK)))
+
+# Collect monthly averages
+monthly_data <- monthly_data %>%
+  mutate(month = floor_date(date_test, "month")) %>%
+  group_by(month) %>%
+  summarize(avg_milk = mean(MILK, na.rm = TRUE))
+
+# Identify the most recent month
+most_recent_month <- max(monthly_data$month, na.rm = TRUE)
+
+# Filter out the most recent month
+monthly_data <- monthly_data %>%
+  filter(month != most_recent_month)
+
+# Find the lowest points for labeling
+lowest_points <- monthly_data %>%
+  filter(avg_milk == min(avg_milk, na.rm = TRUE))  # Find the lowest average milk points
+
+# Plot
+ggplot(monthly_data, aes(x = month, y = avg_milk)) +
+  geom_line() +
+  geom_point(aes(color = avg_milk), size = 2) +  # Highlight the points
+  geom_text(data = lowest_points, aes(label = paste0(round(avg_milk, 2))), 
+            vjust = -1, hjust = 0.5, color = "red", size = 4) +  # Add labels on the lowest points
+  scale_x_date(date_labels = "%b %Y", date_breaks = "3 months") +  # Format month labels
+  labs(title = "Average Monthly Milk Production",
+       x = "Month",
+       y = "Average Milk Production (L)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate month labels for readability
+
+```
