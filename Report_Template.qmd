@@ -184,32 +184,68 @@ if (!is.null(weather_data_raw)) {
     mutate(datetime = as.Date(datetime))%>%
     rename(date_weather = datetime)%>%
     mutate(THI = temp - (0.55 - 0.0055 * humidity) * (temp - 58)) 
+
+  # color scale
+  weather_data <- weather_data %>%
+    mutate(THI_color = case_when(
+      THI >= 70 ~ "red",       # Very high THI (above 70) - red
+      THI >= 60 ~ "orange",    # High THI (between 60 and 70) - orange
+      THI >= 50 ~ "yellow",    # Moderate THI (between 50 and 60) - yellow
+      TRUE ~ "green"           # Low THI (below 50) - green
+    ))
+  
+  weather_data <- weather_data %>%
+    mutate(next_date = lead(date_weather),   # Get the next date for each row (for segment plotting)
+           next_THI = lead(THI),     # Get the next THI value for each row
+           next_THI_color = lead(THI_color))  # Get the next THI color
+  
+  # Plot with color-changing line
+  thi_plot <- ggplot(weather_data, aes(x = date_weather, y = THI)) +
+    geom_segment(aes(xend = next_date, yend = next_THI, color = next_THI_color), size = 1) +  # Line segments with color
+    labs(title = "Thermal Heat Index (THI) Over Time",
+         x = "Date",
+         y = "THI") +
+    scale_color_identity() +  # Use color values directly from the THI_color column
+    theme_minimal() +  # Minimal theme for a clean look
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
+   
 }
-# color scale
-weather_data <- weather_data %>%
-  mutate(THI_color = case_when(
-    THI >= 70 ~ "red",       # Very high THI (above 70) - red
-    THI >= 60 ~ "orange",    # High THI (between 60 and 70) - orange
-    THI >= 50 ~ "yellow",    # Moderate THI (between 50 and 60) - yellow
-    TRUE ~ "green"           # Low THI (below 50) - green
-  ))
 
-weather_data <- weather_data %>%
-  mutate(next_date = lead(date_weather),   # Get the next date for each row (for segment plotting)
-         next_THI = lead(THI),     # Get the next THI value for each row
-         next_THI_color = lead(THI_color))  # Get the next THI color
+# Filter production data to get weekly averages for past year:
 
-# Plot with color-changing line
-ggplot(weather_data, aes(x = date_weather, y = THI)) +
-  geom_segment(aes(xend = next_date, yend = next_THI, color = next_THI_color), size = 1) +  # Line segments with color
-  labs(title = "Thermal Heat Index (THI) Over Time",
+milk_weekly <- production_data %>%
+  mutate(MILK = as.numeric(gsub("\\*", "", MILK)))
+
+milk_weekly <- milk_weekly %>%
+  mutate(week = floor_date(date_test, "week")) %>%
+  group_by(week) %>%
+  summarize(avg_milk = mean(MILK, na.rm = TRUE))
+
+# Filter for the last 12 months
+last_year <- Sys.Date() - years(1)  # Get the date for one year ago
+milk_weekly_last_year <- milk_weekly %>%
+  filter(week >= last_year)
+
+milk_plot <- ggplot(milk_weekly_last_year, aes(x = week, y = avg_milk)) +
+  geom_line(color = "green", size = 1) +  # Line for milk production
+  labs(title = "THI and Weekly Average Milk Production Over the Last Year",
        x = "Date",
-       y = "THI") +
-  scale_color_identity() +  # Use color values directly from the THI_color column
-  theme_minimal() +  # Minimal theme for a clean look
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels
- 
+       y = "Value") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+combined_plot <- thi_plot + 
+  geom_line(data = milk_weekly_last_year, aes(x = week, y = avg_milk), color = "steelblue", size = 1) +  # Add milk production line
+  scale_y_continuous(
+    limits = c(min(c(min(weather_data$THI), min(milk_weekly_last_year$avg_milk))),
+               max(c(max(weather_data$THI), max(milk_weekly_last_year$avg_milk)))),
+    expand = c(0, 0)  # Remove extra space
+  ) + 
+  labs(title = "THI and Weekly Average Milk Production Over the Last Year",
+       subtitle = "Weekly averages of milk production and Thermal Heat Index") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
 
+# Show the plot
+print(combined_plot)
 
 ```
