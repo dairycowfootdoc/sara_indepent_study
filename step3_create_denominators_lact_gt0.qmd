@@ -45,6 +45,10 @@ date_end <- ymd("2024-12-31")
 
 # to get cows with dates in window
 deno <- animal_lactations |>
+  select(id_animal, 
+         id_animal_lact, 
+         lact_number, lact_group, lact_group_basic,
+         date_fresh, date_archive, date_archive_max) |> 
   # create 5 lact groupp
   mutate (lact_group_5 = case_when(
       (lact_number == 0) ~ 'Heifer', 
@@ -59,12 +63,13 @@ deno <- animal_lactations |>
   mutate(time_period = time_period_text) |> 
   # removes heifers
   filter(lact_number>0) |>  
-  filter(date_archive <= date_end | is.na(date_archive)) |> 
+  filter(date_archive <= date_end | is.na(date_archive) 
+         & date_fresh <= date_end) |> 
   # filters cows fresh before start date
-  filter(date_fresh<= date_start & date_archive_max >= date_start |
-           date_fresh<= date_start & is.na(date_archive_max) |
+  filter(date_fresh <= date_start & date_archive_max >= date_start |
+           date_fresh <= date_start & is.na(date_archive_max) |
   # filters cows fresh after start date
-    date_fresh >= date_start & date_archive_max <= date_end|
+    date_fresh >= date_start & date_archive_max <= date_end |
            date_fresh >= date_start & is.na(date_archive_max)
          )
 
@@ -107,6 +112,7 @@ herd_deno <- bind_rows(deno_all_lacts,
   distinct()
 
 ```
+
 ```{r}
 # function for above to allow date range 
 
@@ -138,7 +144,8 @@ deno <- animal_lactations |>
   mutate(time_period = time_period_text) |> 
   # removes heifers
   filter(lact_number>0) |>  
-  filter(date_archive <= date_end | is.na(date_archive)) |> 
+  filter(date_archive <= date_end | is.na(date_archive) 
+         & date_fresh <= date_end) |> 
   # filters cows fresh before start date
   filter(date_fresh <= date_start & date_archive_max >= date_start |
            date_fresh <= date_start & is.na(date_archive_max) |
@@ -148,9 +155,9 @@ deno <- animal_lactations |>
          )
 }
 
-test <- fxn_create_deno(label = "2023",
-                        date_start = "2023-01-01",
-                        date_end = "2023-12-31")
+test <- fxn_create_deno(label = "2021",
+                        date_start = "2021-01-01",
+                        date_end = "2021-12-31")
  
 ```
 
