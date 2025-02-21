@@ -248,6 +248,10 @@ ggplot(data = deno_2yrs, aes(x = `Lactation Group`, y = count_animals,
 ```{r}
 # to get months
 
+# idea
+
+# extract month adn year from end and start and fresh and archive then write cod using year as group and month as case_whens.
+
 test_month <- test |> 
   select(id_animal, id_animal_lact, date_archive_max, lact_group) |> 
   mutate(January = 1,
