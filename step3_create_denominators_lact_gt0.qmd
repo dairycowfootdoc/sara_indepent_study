@@ -116,9 +116,11 @@ herd_deno <- bind_rows(deno_all_lacts,
 ```{r}
 # function for above to allow date range 
 
+# data set create function
 fxn_create_deno <- function(label,
                             date_start,
                             date_end){
+# needs error checks  
   time_period_text <- label
 date_start <- ymd(date_start)
 date_end <- ymd(date_end)
@@ -155,13 +157,61 @@ deno <- animal_lactations |>
          )
 }
 
-test <- fxn_create_deno(label = "2021",
+denominators <- fxn_create_deno(label = "2021",
                         date_start = "2021-01-01",
                         date_end = "2021-12-31")
  
 ```
 
 
+```{r}
+# denon processing function
+
+fxn_calc_deno <- function(data = denominators){
+  
+  # summarize total
+test_deno_total <- data |> 
+  group_by(time_period, id_animal) |>  
+  # get rid of dup as only interested in total cows
+  slice_tail() |> 
+  ungroup() |> 
+  group_by(time_period) |> 
+  summarise(cows_total = n()) |> 
+  mutate(lact_group = "Total")
+
+# create lactation groups denominators
+deno_all_lacts <- data |> 
+  group_by(time_period, lact_group_basic) |>  
+  summarize(count_animals = n_distinct(id_animal), 
+            count_lactations = n_distinct(id_animal_lact))|>
+  ungroup()%>%
+ rename(`Lactation Group` = lact_group_basic )
+
+deno_by_lact_group <- data |>
+  group_by(time_period,  lact_group)|>
+  summarize(count_animals = n_distinct(id_animal), 
+            count_lactations = n_distinct(id_animal_lact)) |>
+  ungroup() %>%
+ rename(`Lactation Group` = lact_group)
+
+# create more lact groups
+deno_by_lact_group_5 <- data |>
+  group_by(time_period,  lact_group_5)|>
+  summarize(count_animals = n_distinct(id_animal), 
+            count_lactations = n_distinct(id_animal_lact)) |>
+  ungroup() %>%
+  rename('Lactation Group' = lact_group_5)
+
+herd_deno <- bind_rows(deno_all_lacts, 
+                  deno_by_lact_group, 
+                  deno_by_lact_group_5) |> 
+  distinct()
+
+}
+
+deno <- fxn_calc_deno(denominators)
+
+```
 
 
 ```{r}
