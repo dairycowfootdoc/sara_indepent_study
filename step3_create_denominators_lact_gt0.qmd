@@ -85,7 +85,8 @@ test_deno_total <- deno |>
   ungroup() |> 
   group_by(time_period) |> 
   summarise(cows_total = n()) |> 
-  mutate(lact_group = "Total")
+  mutate(lact_group = "Total") |> 
+  ungroup()
 
 # create lactation groups denominators
 deno_all_lacts <- deno |> 
@@ -251,6 +252,8 @@ ggplot(data = deno_2yrs, aes(x = `Lactation Group`, y = count_animals,
 # idea
 
 # extract month adn year from end and start and fresh and archive then write cod using year as group and month as case_whens.
+
+# floor_date()
 
 test_month <- test |> 
   select(id_animal, id_animal_lact, date_archive_max, lact_group) |> 
