@@ -209,7 +209,33 @@ herd_deno <- bind_rows(deno_all_lacts,
 
 }
 
-deno <- fxn_calc_deno(denominators)
+herd_deno <- fxn_calc_deno(denominators)
+
+# can do multiple years or time periods by combining the above
+
+denominators_2023 <- fxn_create_deno(label = "2023",
+                        date_start = "2023-01-01",
+                        date_end = "2023-12-31") |> 
+  fxn_calc_deno()
+
+denominators_2024 <- fxn_create_deno(label = "2024",
+                        date_start = "2024-01-01",
+                        date_end = "2024-12-31") |> 
+  fxn_calc_deno()
+
+deno_2yrs <- bind_rows(denominators_2024, denominators_2023)
+
+ggplot(data = deno_2yrs, aes(x = `Lactation Group`, y = count_animals,
+                             fill = `Lactation Group`))+
+  geom_col()+
+  scale_fill_viridis_d()+
+  facet_wrap(vars(time_period))+
+  theme_minimal()+
+  theme(legend.position = "",
+        axis.text.x = element_text(angle = 45, hjust = 1)
+        )+
+  labs(x = "")
+  
 
 ```
 
