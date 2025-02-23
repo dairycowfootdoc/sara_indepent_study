@@ -194,7 +194,7 @@ denominator_week<-fxn_create_deno(time_period = floordate_calendar_week)
 denominator_time_period<-bind_rows(denominator_year, denominator_season, denominator_month, denominator_week)%>%
   select(`Lactation Group`, date_calendar, contains('time_period'), contains('animal'), contains('floordate'))
 
-write_parquet(denominator_time_period, 'data/intermediate_files/denominator_by_time_periods.parquet')
+write_parquet(denominator_time_period, 'data/intermediate_files/denominator_by_lact_group.parquet')
 
 ```
 

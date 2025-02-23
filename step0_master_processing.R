@@ -17,7 +17,8 @@ source('step2_create_intermediate_files.R')
 
 ### Step3 Create Denominators ---------------------
 #***Modify This Step to Include the Denominators of Interest***
-quarto::quarto_render('step3_create_denominators_new.qmd') 
+quarto::quarto_render('step3_create_denominators_by_lact_group.qmd') 
+quarto::quarto_render('step3_create_denominators_by_dim_group.qmd') 
 
 
 ### Step 4 Report Templates------------------------
