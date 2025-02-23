@@ -23,9 +23,11 @@ quarto::quarto_render('step3_create_denominators_by_dim_group.qmd')
 
 ### Step 4 Report Templates------------------------
 #add basic report templates
-# event check report
+
+# event check reports
 quarto::quarto_render('explore_event_types.qmd') 
 quarto::quarto_render('data_dictionary.qmd')
+
 # disease report 
 # quarto::quarto_render('step3_report_disease_template.qmd')
 
