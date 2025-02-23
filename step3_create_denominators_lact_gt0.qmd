@@ -1,5 +1,5 @@
 ---
-title: "Disease Template"
+title: "Create Denominators"
 format: html
 editor: source
 ---
@@ -33,6 +33,115 @@ disease_lact_wide<-read_parquet('data/intermediate_files/disease_lactation_level
 data_pull_min<-min(animals$data_pull_date_min)
 data_pull_max<-max(animals$data_pull_date_max)
 ```
+
+
+
+```{r}
+calendar<-tibble(date_calendar = seq.Date(from = data_pull_max-1200, to = data_pull_max, by = 1))
+
+deno_base<-animal_lactations |> 
+  left_join(animals) |> 
+  group_by(id_animal) |> 
+  mutate(
+    date_first_fresh = case_when(
+      (lact_number == 0)~mdy(NA), 
+      TRUE~min(date_fresh, na.rm = T)), 
+    
+    date_last_fresh = case_when(
+      (lact_number == 0)~mdy(NA), 
+      TRUE~max(date_fresh, na.rm = T)),
+    
+    lact_number_max = max(lact_number, na.rm = T)) |> 
+  ungroup() |> 
+  
+  mutate(
+    date_elig_start = case_when(
+      lact_number >0~date_fresh, 
+      lact_number == 0~date_birth, 
+      TRUE~data_pull_min), 
+    
+    date_elig_end = case_when(
+      is.na(date_archive)~data_pull_max, 
+      TRUE~date_archive)
+    )
+
+sk_deno<-skimr::skim(deno_base)
+
+
+test<-deno_base%>%
+  filter(lact_number == 0)%>%
+  select(id_animal, id_animal_lact, date_birth, lact_number, lact_number_max, date_fresh, date_sold, date_died, date_archive, date_elig_start, date_elig_end)
+
+```
+
+
+```{r, message = FALSE}
+
+deno_dataframe<-NULL
+#i = 1199
+for (i in seq_along(calendar$date_calendar)){
+  
+  df<-deno_base%>%
+    #test%>%
+    mutate(date_ref = calendar$date_calendar[[i]])%>%
+    mutate(eligible = case_when(
+      ((date_elig_start<=date_ref)&(date_elig_end>=date_ref))~'eligible', 
+      TRUE~'not eligiible'
+    ))
+  
+  df2<-df%>%
+    group_by(lact_group_basic, date_ref, eligible) |> 
+    summarize(ct_animals = n_distinct(id_animal))%>%
+    ungroup() |> 
+    rename(`Lactation Group` = lact_group_basic)
+  
+  df3<-df%>%
+    group_by(lact_group, date_ref, eligible) |> 
+    summarize(ct_animals = n_distinct(id_animal))%>%
+    ungroup()|> 
+    rename(`Lactation Group` = lact_group)
+  
+  df4<-bind_rows(df2, df3)%>%
+    distinct()
+  
+  deno_dataframe <-bind_rows(deno_dataframe, df2) 
+    
+}
+  
+
+
+
+
+```
+
+```{r}
+
+test_animal<-read_parquet('data/intermediate_files/events_formatted.parquet')%>%
+  filter(id_animal %in% '233349_04/30/22')
+
+check_fresh<-read_parquet('data/intermediate_files/events_formatted.parquet')%>%
+  filter(event %in% 'FRESH')%>%
+  mutate(floordate_month = floor_date(date_event, unit = 'month'))
+
+check_left<-read_parquet('data/intermediate_files/events_formatted.parquet')%>%
+  filter(event %in% c('SOLD', 'DIED'))%>%
+  mutate(floordate_month = floor_date(date_event, unit = 'month'))
+
+ggplot(check_fresh)+
+  geom_bar(aes(x = floordate_month, fill = lact_group))+
+  facet_grid(.~lact_group)
+
+ggplot(check_left)+
+  geom_bar(aes(x = floordate_month, fill = lact_group))+
+  facet_grid(lact_group~., scales = 'free')
+
+
+ggplot(deno_dataframe%>%filter(eligible %in% 'eligible'))+
+  geom_point(aes(x = date_ref, y = ct_animals, color = `Lactation Group`))
+
+```
+
+
 
 
 # Gerard's Attempt - by lactation

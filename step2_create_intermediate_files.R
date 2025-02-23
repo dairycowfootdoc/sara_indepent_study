@@ -15,12 +15,12 @@ source('functions/fxn_treatment.R')
 source('functions/fxn_parse_free_text.R') #functions to parse remarks and protocols
 source('functions/fxn_location.R') #custom function to specify event location
 
-list_selected_events<-c('BRED' ) #***Modify this *** to be the list of events you want to explore
+list_selected_events<-c('MAST' ) #***Modify this *** to be the list of events you want to explore
 
-fxn_assign_disease<-fxn_assign_disease_bred #***Match disease function to selected events***
-fxn_assign_treatment<-fxn_assign_treatment_bred #***Match treatment function to selected events***
+fxn_assign_disease<-fxn_assign_disease_mastitis #***Match disease function to selected events***
+fxn_assign_treatment<-fxn_assign_treatment_template #***Match treatment function to selected events***
 
-set_outcome_gap_animal<- 60 #set this to be the number of days between events that would still count as the same event
+set_outcome_gap_animal<- 120 #set this to be the number of days between events that would still count as the same event
 
 set_outcome_gap_lactation<- 30 #set this to be the number of days between events that would still count as the same event
 

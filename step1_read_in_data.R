@@ -172,7 +172,8 @@ write_parquet(events2%>%
                        event_type, event, remark, contains('remark'), protocols, contains('protocols'), 
                        technician, date_event, dim_event, location_event, locate_lesion, 
                        R, `T`, B, date_heat, date_concieved, date_aborted, date_repro_dx
-                ), 'data/intermediate_files/events_formatted.parquet')
+                       ), 
+              'data/intermediate_files/events_formatted.parquet')
 
 
 # data quality files------------

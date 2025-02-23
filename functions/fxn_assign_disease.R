@@ -16,3 +16,11 @@ fxn_assign_disease_lameness<-function(df){
       TRUE ~ 'OTHER'
     ))
 }
+
+fxn_assign_disease_bred<-function(df){
+  df%>%
+    mutate(disease = case_when(
+      event %in% 'BRED' ~ 'BRED',
+      TRUE ~ 'Not BRED'
+    ))
+}
