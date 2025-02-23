@@ -10,8 +10,8 @@ pacman::p_load(
   lubridate,
   quarto, 
   gt,
-  arrow,
-)
+  arrow
+  )
 
 start<-now()
 
@@ -39,13 +39,6 @@ set_outcome_gap_lactation<- 1
 #* set events of interest to create long and wide disease specifics data sets
 #* #***Modify this *** to be the list of events you want to explore
 list_selected_events<-c('MAST') 
-
-#***Match disease function to selected events***
-## make a function to detect what to pick?
-fxn_assign_disease<-fxn_assign_disease_mastitis 
-#***Match treatment function to selected events***
-fxn_assign_treatment<-fxn_assign_treatment_template 
-
 
 source('step2_create_intermediate_files.R')
 
