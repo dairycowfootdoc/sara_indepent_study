@@ -50,23 +50,27 @@ cohorts_fresh_date<-animal_lactations%>%
          )%>%
   select(id_animal, id_animal_lact, contains('cohort'))
 
+
+
 ```
 
 
 ## Disease Discriptions
 
-### Distribution of Disease Event within Phase (Lactation) - DIM at disease event
+### Distribution of First Disease Event within Phase (Lactation) - DIM at disease event
 
 ```{r}
 
 ggplot(disease_lact_long%>%
          left_join(cohorts_fresh_date))+
   geom_density(aes(x = dim_disease_first,  color = cohort_fresh_year, group = cohort_fresh_year))+
- geom_histogram(aes(x = dim_disease_first,  fill = cohort_fresh_year, group = cohort_fresh_year), 
-                alpha = .2, binwidth = 7)+
-  geom_density(aes(x = dim_disease_first,  color = cohort_fresh_year, group = cohort_fresh_year))+
+ # geom_histogram(aes(x = dim_disease_first,  fill = cohort_fresh_year, group = cohort_fresh_year), 
+ #                alpha = .2, binwidth = 7)+
+ #  geom_density(aes(x = dim_disease_first,  color = cohort_fresh_year, group = cohort_fresh_year))+
    theme_bw()+
-  coord_cartesian(xlim = c(0, 305))
+  coord_cartesian(xlim = c(0, 305))+
+  facet_wrap(.~cohort_fresh_year)+
+  coord_cartesian(ylim = c(0, 0.01))
 
 ```
 
@@ -90,97 +94,13 @@ ggplot(duration%>%filter(disease_count == 1))+
 ```
 
 
-## Denominator - use phase distribution
-
-### Calander Time
-```{r}
-calander<-tibble(
-  calander_date = seq.Date(from = min(disease_lact_long$date_disease_first), 
-                           to = max(disease_lact_long$date_disease_last), 
-                           by = 'day')
-)
-```
-
-
-### Animals Eligilble
-
-```{r}
-animal_lactation_summary<-animal_lactations%>%
-  group_by(id_animal)%>%
-  mutate(date_fresh_min = min(date_fresh, na.rm = T), 
-         date_archive_min = min(date_archive, na.rm = T))%>%
-  ungroup()%>%
-  select(id_animal, date_fresh_min, contains('pull'))
-
-deno_cow<-animals%>%
-              mutate(date_left = case_when(
-                (is.na(date_died)<1)~date_died,
-                (is.na(date_sold)<1)~date_sold,
-                TRUE~lubridate::mdy(NA))
-                )%>%
-  left_join(lact2)%>%
-  mutate(
-    date_start = case_when(
-    is.na(date_fresh_min)~data_pull_date_min,
-    TRUE~date_fresh_min), 
-    
-     date_end = case_when(
-       is.na(date_left)~data_pull_date_max,
-       TRUE~date_left)
-  )
-
-list_dates<-sort(unique(calander$calander_date))
-master_deno<-NULL
-#i=1
-for (i in seq_along(list_dates)){
-  deno_cow2<-deno_cow%>%
-    #lazy_dt()%>%
-    mutate(ref_date = list_dates[i])%>%
-    mutate(ct_day = case_when(
-      (ref_date>date_start)&(ref_date<date_end)~1,
-      TRUE~0)
-      )%>%
-    group_by(ref_date)%>%
-      summarize(animal_count = sum(ct_day))%>%
-      ungroup()#%>%
-    #as_tibble()
-  
-  
-  master_deno<-bind_rows(master_deno, deno_cow2)
-}
-
-deno_by_month = master_deno%>%
-  mutate(floordate_month = floor_date(ref_date, 'month'))%>%
-  group_by(floordate_month)%>%
-  summarize(ct_animals = mean(animal_count))%>%
-  ungroup()
-            
-            
-            
-eligible_cow<-animal_lactations%>%
-  left_join(animals)%>%
-  mutate(date_end_elig_to_breed = date_fresh)%>%
-  mutate(elig_start = date_fresh + days(vwp),
-         elig_end = case_when(
-           is.na(date_died)<1~date_died,
-           is.na(date_sold)<1~date_sold,
-           is.na(date_dnb)<1~date_dnb,
-           TRUE~date_fresh +days(200)
-         ))
-
-
-
-```
-
-
-
-## 
-
+ 
+#***START HERE***
 ### Calander Time
 ```{r}
 
 disease_by_month<-disease_lact_long%>%
-  mutate(repro_status = case_when(
+  mutate(dz_status = case_when(
     str_detect(list_treatments, 'A')~'Abort',
      str_detect(list_treatments, 'P|E')~'Pregnant',
     TRUE~'Open'
