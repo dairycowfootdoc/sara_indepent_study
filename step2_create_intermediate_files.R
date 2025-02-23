@@ -20,10 +20,6 @@ list_selected_events<-c('MAST' ) #***Modify this *** to be the list of events yo
 fxn_assign_disease<-fxn_assign_disease_mastitis #***Match disease function to selected events***
 fxn_assign_treatment<-fxn_assign_treatment_template #***Match treatment function to selected events***
 
-set_outcome_gap_animal<- 120 #set this to be the number of days between events that would still count as the same event
-
-set_outcome_gap_lactation<- 30 #set this to be the number of days between events that would still count as the same event
-
 
 #read in file-----------------
 
