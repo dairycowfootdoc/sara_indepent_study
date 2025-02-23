@@ -145,8 +145,7 @@ ggplot(check_left)+
 
 
 ggplot(deno_dataframe%>%filter(eligible %in% 'eligible'))+
-  geom_point(aes(x = date_ref, y = ct_animals, color = `Lactation Group`))+
-  ylim(c(0, NA))
+  geom_point(aes(x = date_ref, y = ct_animals, color = `Lactation Group`))
 
 ```
 
@@ -195,6 +194,11 @@ denominator_time_period<-bind_rows(denominator_year, denominator_season, denomin
   select(`Lactation Group`, date_calendar, contains('time_period'), contains('animal'), contains('floordate'))
 
 write_parquet(denominator_time_period, 'data/intermediate_files/denominator_by_time_periods.parquet')
+
+```
+# Denominators by production phase
+
+```{r}
 
 ```
 
