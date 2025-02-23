@@ -181,7 +181,8 @@ fxn_create_deno<-function(time_period){
               animal_count_sd = round(sd(ct_animals), digits = 0), 
               animal_count_min = min(ct_animals), 
               animal_count_max = max(ct_animals))%>%
-    ungroup()
+    ungroup()%>%
+    mutate(date_calendar = {{time_period}})
 }
 
 denominator_year<-fxn_create_deno(time_period = floordate_calendar_year)
@@ -189,7 +190,8 @@ denominator_season<-fxn_create_deno(time_period = floordate_calendar_season)
 denominator_month<-fxn_create_deno(time_period = floordate_calendar_month)
 denominator_week<-fxn_create_deno(time_period = floordate_calendar_week)
 
-denominator_time_period<-bind_rows(denominator_year, denominator_season, denominator_month, denominator_week)
+denominator_time_period<-bind_rows(denominator_year, denominator_season, denominator_month, denominator_week)%>%
+  select(`Lactation Group`, date_calendar, contains('time_period'), contains('animal'), contains('floordate'))
 
 write_parquet(denominator_time_period, 'data/intermediate_files/denominator_by_time_periods.parquet')
 
