@@ -192,7 +192,14 @@ denominator_month<-fxn_create_deno(time_period = floordate_calendar_month)
 denominator_week<-fxn_create_deno(time_period = floordate_calendar_week)
 
 denominator_time_period<-bind_rows(denominator_year, denominator_season, denominator_month, denominator_week)%>%
-  select(`Lactation Group`, date_calendar, contains('time_period'), contains('animal'), contains('floordate'))
+  select(`Lactation Group`, date_calendar, contains('time_period'), contains('animal'), contains('floordate'))%>%
+  mutate(time_period_type = case_when(
+    (is.na(floordate_calendar_year)<1)~'year', 
+    (is.na(floordate_calendar_season)<1)~'season', 
+    (is.na(floordate_calendar_month)<1)~'month', 
+    (is.na(floordate_calendar_week)<1)~'week', 
+    TRUE~'unknown')
+  )
 
 write_parquet(denominator_time_period, 'data/intermediate_files/denominator_by_lact_group.parquet')
 
