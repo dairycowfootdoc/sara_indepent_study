@@ -15,6 +15,12 @@ source('functions/fxn_treatment.R')
 source('functions/fxn_parse_free_text.R') #functions to parse remarks and protocols
 source('functions/fxn_location.R') #custom function to specify event location
 
+#***Match disease function to selected events***
+## make a function to detect what to pick?
+fxn_assign_disease<-fxn_assign_disease_mastitis 
+#***Match treatment function to selected events***
+fxn_assign_treatment<-fxn_assign_treatment_template 
+
 
 #read in file-----------------
 
