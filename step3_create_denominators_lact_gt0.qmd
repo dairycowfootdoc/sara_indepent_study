@@ -182,12 +182,12 @@ ggplot(data = deno_2yrs, aes(x = `Lactation Group`, y = count_animals,
 ```{r}
 # function to create data set used to calc DIM denominators
 
+interval_days = 30
+
 # 13 categories gives upto 390
-fxn_dim_cat <- function(data, 
-                                  num_categories = 13, 
-                                  interval = 30, 
-                                  date_start = date_start_deno,
-                                  date_end = date_end_deno) {
+fxn_dim_data <- function(data, date_start = date_start_deno,
+                                  date_end = date_end_deno,
+                         interval = interval_days) {
   # convert dates
   date_start <- ymd(date_start)
   date_end <- ymd(date_end)
@@ -204,7 +204,11 @@ fxn_dim_cat <- function(data,
            dim_start = if_else(is.na(dim_start), 0, dim_start),
            dim_start_cat = ceiling(dim_start / interval),
            dim_end_cat = ceiling(dim_end / interval)
-    )
+           )
+}
+
+fxn_dim_groups <- function(data, num_categories = 13, 
+                                  interval = interval_days){
   
   # Generate `dim_` categories dynamically
   for (i in seq_len(num_categories)) {
@@ -224,7 +228,8 @@ fxn_dim_cat <- function(data,
 
 # create data set
 deno_dim <- fxn_create_deno() |> 
-  fxn_dim_cat(num_categories = 13)  
+  fxn_dim_data() |> 
+  fxn_dim_groups(num_categories = 13)  
 
 # fxn to calculate
 fxn_deno_dim <- function(data = deno_dim, lact_group_var){
