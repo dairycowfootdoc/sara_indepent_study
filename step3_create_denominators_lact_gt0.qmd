@@ -347,32 +347,57 @@ data_class <- data |>
          unit_2 = if_else(unit_start_cat <= as.yearmon(date_start_deno) + 1/12 &
                             unit_end_cat >=
                             as.yearmon(date_start_deno) + 1/12,
+                                                   1,0),
+          unit_3 = if_else(unit_start_cat <= as.yearmon(date_start_deno) + 2/12 &
+                            unit_end_cat >=
+                            as.yearmon(date_start_deno) + 2/12,
+                                                   1,0),
+         unit_4 = if_else(unit_start_cat <= as.yearmon(date_start_deno) + 3/12 &
+                            unit_end_cat >=
+                            as.yearmon(date_start_deno) + 3/12,
+                                                   1,0),
+         unit_5 = if_else(unit_start_cat <= as.yearmon(date_start_deno) + 4/12 &
+                            unit_end_cat >=
+                            as.yearmon(date_start_deno) + 4/12,
+                                                   1,0),
+         unit_6 = if_else(unit_start_cat <= as.yearmon(date_start_deno) + 5/12 &
+                            unit_end_cat >=
+                            as.yearmon(date_start_deno) + 5/12,
+                                                   1,0),
+         unit_7 = if_else(unit_start_cat <= as.yearmon(date_start_deno) + 6/12 &
+                            unit_end_cat >=
+                            as.yearmon(date_start_deno) + 6/12,
+                                                   1,0),
+         unit_8 = if_else(unit_start_cat <= as.yearmon(date_start_deno) + 7/12 &
+                            unit_end_cat >=
+                            as.yearmon(date_start_deno) + 7/12,
+                                                   1,0),
+         unit_9 = if_else(unit_start_cat <= as.yearmon(date_start_deno) + 8/12 &
+                            unit_end_cat >=
+                            as.yearmon(date_start_deno) + 8/12,
+                                                   1,0),
+         unit_10 = if_else(unit_start_cat <= as.yearmon(date_start_deno) + 9/12 &
+                            unit_end_cat >=
+                            as.yearmon(date_start_deno) + 9/12,
+                                                   1,0),
+         unit_11 = if_else(unit_start_cat <= as.yearmon(date_start_deno) + 10/12 &
+                            unit_end_cat >=
+                            as.yearmon(date_start_deno) + 10/12,
+                                                   1,0),
+         unit_12 = if_else(unit_start_cat <= as.yearmon(date_start_deno) + 11/12 &
+                            unit_end_cat >=
+                            as.yearmon(date_start_deno) + 11/12,
                                                    1,0)
-         
-  )
+         )
 
-  
-  
-  
-}
 
-fxn_dim_groups <- function(data, num_categories = 13, 
-                                  interval = interval_days){
-  
-  # Generate `dim_` categories dynamically
-  for (i in seq_len(num_categories)) {
-    col_name <- paste0("dim_", (i-1) * interval, "_", i * interval)
-    data <- data |> 
-      mutate(!!col_name := if_else(dim_start_cat <= i & dim_end_cat >= i, 1, 0))
-  }
-  
-    # Add the n+1 th category for cows with DIM > (num_categories * interval)
-  col_name_extra <- paste0("dim_", num_categories * interval, "_+")
-  data <- data |> 
-    mutate(!!col_name_extra := if_else(dim_end_cat > num_categories, 1, 0))
-  
-  return(data)
-}
+# to do make code give labels to unit columns so they are the names of vars
+# unit_start_deno
+# and allow code bo be flexible in case the time period is shorter like season
+# or  6 months
+
+
+
 
 ```
 
