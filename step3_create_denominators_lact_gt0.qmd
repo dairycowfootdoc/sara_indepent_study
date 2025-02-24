@@ -218,6 +218,9 @@ herd_deno <- bind_rows(deno_all_lacts,
 
 herd_deno <- fxn_calc_deno(denominators)
 
+# save file
+write_parquet(herd_deno, 'data/intermediate_files/herd_denominators.parquet')
+
 # can do multiple years or time periods by combining the above
 
 denominators_yr1 <- fxn_create_deno(label = "2023",
@@ -306,7 +309,7 @@ test_summary_herd <- test_dim |>
 # function to create data set used to calc DIM denominators
 
 # 13 categories gives upto 390
-create_dim_categories <- function(data, 
+fxn_dim_cat <- function(data, 
                                   num_categories = 13, 
                                   interval = 30, 
                                   date_start,
@@ -340,51 +343,61 @@ create_dim_categories <- function(data,
 }
 
 # create data set
-test_dim <- fxn_create_deno(label = "2024",
+deno_dim <- fxn_create_deno(label = "2024",
                             date_start = "2024-01-01",
                             date_end = "2024-12-31") |> 
-  create_dim_categories(num_categories = 13,
+  fxn_dim_cat(num_categories = 13,
                         date_start = "2024-01-01",
                         date_end = "2024-12-31"
                         )  
 
-# fxn to calculuate
-fxn_deno_dim <- function(data, lact_group_var){
+# fxn to calculate
+fxn_deno_dim <- function(data = deno_dim, lact_group_var){
+  
   data <- data |> 
   select(-c(dim_start, dim_end, dim_end_cat, dim_start_cat)) |> 
-  group_by(time_period, lact_group_basic) |> 
+  group_by(time_period, {{ lact_group_var }}) |> 
   summarise(across(contains("dim_"), ~ sum(. == 1, na.rm = TRUE))) |> 
   ungroup() |> 
-  pivot_longer(cols = -c(time_period, lact_group_basic), 
-               names_to = "Month", 
-               values_to = "Count") |> 
-  rename(`Lactation Group` = lact_group_basic )
-
+  pivot_longer(cols = -c(time_period, {{ lact_group_var }}), 
+               names_to = "DIM", 
+               values_to = "count") |> 
+  rename(`Lactation Group` = {{ lact_group_var }} )
   
 }
-test_summary_herd <- test_dim |> 
-  select(-c(dim_start, dim_end, dim_end_cat, dim_start_cat)) |> 
-  group_by(time_period, lact_group_basic) |> 
-  summarise(across(contains("dim_"), ~ sum(. == 1, na.rm = TRUE))) |> 
-  ungroup() |> 
-  pivot_longer(cols = -c(time_period, lact_group_basic), 
-               names_to = "Month", 
-               values_to = "Count") |> 
-  rename(`Lactation Group` = lact_group_basic )
+
+# create dim df
+deno_dim_all <- fxn_deno_dim(deno_dim, lact_group_basic)
+deno_dim_3 <- fxn_deno_dim(deno_dim, lact_group)
+deno_dim_5 <- fxn_deno_dim(deno_dim, lact_group_5)
 
 
-test_summary_lact_5 <- test_dim |> 
-  select(-c(dim_start, dim_end, dim_end_cat, dim_start_cat)) |> 
-  group_by(time_period, lact_group_5) |> 
-  summarise(across(contains("dim_"), ~ sum(. == 1, na.rm = TRUE))) |>
-  ungroup() |> 
-  pivot_longer(cols = -c(time_period, lact_group_5), 
-               names_to = "Month", 
-               values_to = "Count") 
+herd_deno_dim <- bind_rows(deno_dim_all, 
+                  deno_dim_3, 
+                  deno_dim_5) |> 
+  distinct() |> 
+  #set up for later graphing
+  mutate(DIM = str_remove(DIM, "dim_"),
+         DIM = fct_inorder(DIM)
+         )
 
 
+# save data
+write_parquet(herd_deno_dim, 'data/intermediate_files/herd_dim_denominators.parquet')
 
-
+# test graph
+ggplot(data = herd_deno_dim)+
+  aes(x = DIM, y = count,
+      fill = DIM)+
+  geom_col()+
+  scale_fill_viridis_d()+
+  facet_wrap(vars(`Lactation Group`))+
+  theme_minimal()+
+  theme(legend.position = "",
+        axis.text.x = element_text(angle = 45, hjust = 1)
+        )+
+  labs(x = "",
+       y = "")
 
 
 
