@@ -293,6 +293,29 @@ ggplot(data = herd_deno_dim)+
 
 # Season needs work still
 
+```{r}
+
+# to caculate inventory for each month
+
+data <- data |> 
+    mutate(season_start = as.numeric(case_when(date_fresh > date_start ~ NA,
+                                            date_fresh < date_start ~ 
+                                              date_start - date_fresh)
+                                  ),
+           dim_end = as.numeric(case_when(is.na(date_archive)~ 
+                                            date_end - date_fresh,
+                                          .default = date_archive - date_fresh)
+                                ),
+           dim_start = if_else(is.na(dim_start), 0, dim_start),
+           dim_start_cat = ceiling(dim_start / interval),
+           dim_end_cat = ceiling(dim_end / interval)
+    )
+
+
+
+```
+
+
 <!-- # to get months -->
 
 <!-- # idea -->
