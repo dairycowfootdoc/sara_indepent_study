@@ -246,44 +246,56 @@ ggplot(data = deno_2yrs, aes(x = `Lactation Group`, y = count_animals,
 
 ```
 
-<!-- # this needs work still -->
+# this needs work still
 
-<!-- ```{r} -->
-<!-- # to get months -->
+```{r}
+# idea to get dim
 
-<!-- # idea -->
+# test with 1 day
+# create DIM end and start
+# for end use archive or end date
+# The create dim_cat from those by ceiling(dim/30)
+# Then assign new variables using dim_cat using this logic
+# for dim 0-30 example if start cat >=1 and end_cat>=1
+# for dim 30-60  if start cat <=2 and end_cat>=2
+# for dim 60-90  if start cat <=3 and end_cat>=3
+# then repeat
 
-<!-- # extract month adn year from end and start and fresh and archive then write cod using year as group and month as case_whens. -->
+# to get months
 
-<!-- # floor_date() -->
+# idea
 
-<!-- test_month <- test |>  -->
-<!--   select(id_animal, id_animal_lact, date_archive_max, lact_group) |>  -->
-<!--   mutate(January = 1, -->
-<!--          February = case_when(is.na(date_archive_max) ~ 1, -->
-<!--                              date_archive_max <= "2024-01-31" ~ 0, -->
-<!--                              .default = 1), -->
-<!--          March = case_when(is.na(date_archive_max) ~ 1, -->
-<!--                              date_archive_max <= "2024-02-28" ~ 0, -->
-<!--                              .default = 1) -->
-<!--   )  -->
+# extract month adn year from end and start and fresh and archive then write cod using year as group and month as case_whens.
 
+# floor_date()
 
-<!-- # summarize -->
-<!-- test_summary_month <- test_month |>  -->
-<!--   summarise(across(January:March, ~ sum(. == 1, na.rm = TRUE))) |>  -->
-<!--   pivot_longer(cols = everything(), -->
-<!--                names_to = "Month", -->
-<!--                values_to = "Count") -->
-
-<!-- test_summary_month_lact <- test_month |>  -->
-<!--   group_by(lact_group) |>  -->
-<!--   summarise(across(January:March, ~ sum(. == 1, na.rm = TRUE))) |>  -->
-<!--   ungroup() |>  -->
-<!--   pivot_longer(cols = -(lact_group), -->
-<!--                names_to = "Month", -->
-<!--                values_to = "Count") -->
+test_month <- test |>
+  select(id_animal, id_animal_lact, date_archive_max, lact_group) |>
+  mutate(January = 1,
+         February = case_when(is.na(date_archive_max) ~ 1,
+                             date_archive_max <= "2024-01-31" ~ 0,
+                             .default = 1),
+         March = case_when(is.na(date_archive_max) ~ 1,
+                             date_archive_max <= "2024-02-28" ~ 0,
+                             .default = 1)
+  )
 
 
-<!-- ``` -->
+# summarize
+test_summary_month <- test_month |>
+  summarise(across(January:March, ~ sum(. == 1, na.rm = TRUE))) |>
+  pivot_longer(cols = everything(),
+               names_to = "Month",
+               values_to = "Count")
+
+test_summary_month_lact <- test_month |>
+  group_by(lact_group) |>
+  summarise(across(January:March, ~ sum(. == 1, na.rm = TRUE))) |>
+  ungroup() |>
+  pivot_longer(cols = -(lact_group),
+               names_to = "Month",
+               values_to = "Count")
+
+
+```
 
