@@ -35,14 +35,19 @@ library(jsonlite)
 # Initialization and organization of initial data sets
 
 source('functions/DT_base.R') #functions to parse remarks and protocols
+source('step2_create_intermediate_files.R')
 
-# Intialize animal file and assign data pull date to an object for later use.
+# Intialize animal and animal lactation file and assign data pull date to an object for later use.
 animals <- read_parquet('data/intermediate_files/animals.parquet')
+
+animal_lactations<-read_parquet('data/intermediate_files/animal_lactations.parquet') 
 
 pull_date <- unique(animals$data_pull_date_max)
 
+date_start <- pull_date - 365 # pulls last year of data, modify for specific project
+
 events_formatted <-read_parquet('data/intermediate_files/events_formatted.parquet') |> 
-  filter(date_event > "2023-02-12") # Modify (match with production data)
+  filter(date_event > date_start) 
 
 # Pull the wanted information into a new data sets (double check in DC that the events are actually being recorded under these event names)
 
@@ -54,15 +59,6 @@ lame_data <- events_formatted %>%
 
 # figure out how to pull out calf data
 
-
-# Create summarry data set that only includes counts of events 
-# summarize_events<-events_formatted |> 
-#   filter(date_event > "2024-01-01")|>
-#   group_by(event, protocols_remaining_after_numbers1) |> 
-#   summarize(count_rows=sum(n()))|>
-#   ungroup()%>%
-#   mutate(event_type = factor(protocols_remaining_after_numbers1), 
-#          Event = factor(event))
 
 
 # Pull production data from dairy comp and re-format:
@@ -90,12 +86,151 @@ production_data <- production_data %>%
 
 ```
 
+```{r}
+#Create denominators
+
+# Define date range
+#date_start previously defined as pull_date - 365
+date_end <- pull_date
+date_start_month <- floor_date(date_start, "month") # set to first day of month for monthly calculations later
+date_end_month <- floor_date(pull_date, "month") %m+% months(1) - days(1) # set to last day of month for monthly calculations later
+
+
+filtered_animals <- animal_lactations |>
+  filter(date_fresh <= date_end) |>  # Filter cows that freshened before date_end
+  mutate(year_fresh = year(date_fresh)) |>  # Find freshening year
+  filter(lact_number > 0) |>  # Keep only lactating cows
+  filter(
+    # Cows that freshened before start date but still active
+    (date_fresh <= date_start & (date_archive_max >= date_start | is.na(date_archive_max))) |
+    # Cows that freshened after start date but before end
+    (date_fresh >= date_start & date_archive_max <= date_end) |
+    (date_fresh >= date_start & is.na(date_archive_max))  # Keep animals with no archive date
+  ) 
+
+# Summarize total active cows (unique count per year)
+total_cows <- filtered_animals |> 
+  group_by(year_fresh, id_animal) |> 
+  slice_tail() |>  # Ensure unique count per cow
+  ungroup() |> 
+  group_by(year_fresh) |> 
+  summarise(cows_total = n()) |>  # Get total cows
+  select(year_fresh, cows_total)  # Remove lact_groups column
+
+# Summarize by lactation group (lact_number)
+summary_lact <- filtered_animals |> 
+  group_by(year_fresh, lact_number) |> 
+  summarise(cows_total = n(), .groups = "drop") |>  # Count cows in each lactation group
+  ungroup() |> 
+  mutate(lact_number = ifelse(is.na(lact_number), "Total", lact_number))  # Replace NA with "Total"
+
+# Combine both summary datasets
+summary_lact_final <- bind_rows(total_cows, summary_lact)
+
+#                             Monthly Calculations:
+# Generate a list of all months in the date range
+months_list <- seq(date_start_month, date_end_month, by = "month") |> format("%Y-%m")
+
+# Define a function to calculate monthly active cows by lactation group
+count_active_by_month <- function(month, filtered_animals) {
+  # Define the start and end date for this month
+  month_start <- ymd(paste0(month, "-01"))
+  month_end <- ceiling_date(month_start, "month") - days(1)
+  
+  # Filter animals that were active in this month
+  active_animals <- filtered_animals |> 
+    filter(
+      # Check if the cow was active in this month
+      (date_fresh <= month_end & (is.na(date_archive_max) | date_archive_max >= month_start))
+    )
+  
+  # Count the cows in each lactation group for this month
+  active_counts <- active_animals |> 
+    group_by(lact_number) |> 
+    summarise(cows_active = n(), .groups = "drop") |> 
+    spread(key = lact_number, value = cows_active, fill = 0)
+  
+  # Add the month column
+  active_counts$month <- month
+  
+  # Add total_monthly column by summing across the row (excluding the 'month' column)
+  active_counts <- active_counts |> 
+    mutate(total_monthly = rowSums(active_counts[, -which(names(active_counts) == "month")], na.rm = TRUE))
+  
+  return(active_counts)
+}
+
+# Apply the function to each month in the date range
+monthly_data <- purrr::map_dfr(months_list, count_active_by_month, filtered_animals = filtered_animals)
+
+# Reformat the month to the desired format
+monthly_data <- monthly_data |> 
+  mutate(month = format(ymd(paste0(month, "-01")), "%b-%y")) |>  # Reformat the month column
+
+  # Ensure month is the first column
+  select(month, everything())
+
+```
+
 # Herd Summary
 
-Average monthly milk production:
+Herd Demographics:
+
+```{r}
+# Remove 'total_monthly' column from the original dataset
+monthly_data_cleaned <- monthly_data |> 
+  select(-total_monthly)  # Remove the total_monthly column
+
+# Create a separate dataset for 'total_monthly' for plotting
+total_monthly_data <- monthly_data |> 
+  select(month, total_monthly) |> 
+  pivot_longer(cols = total_monthly, names_to = "lactation", values_to = "cows_active") |> 
+  mutate(lactation = "Total")  # Label this as 'Total' for the plot
+
+# Now proceed with pivoting and transforming the rest of the data
+monthly_data_long <- monthly_data_cleaned |> 
+  pivot_longer(cols = -c(month), names_to = "lactation", values_to = "cows_active") |> 
+  mutate(
+    lactation = ifelse(lactation %in% c("1", "2"), lactation, "3+")  # Condense lactation 3+ into "3+"
+  ) |> 
+  group_by(month, lactation) |>  # Group by month and lactation
+  summarise(cows_active = sum(cows_active), .groups = "drop")  # Aggregate by month and lactation
+
+# Combine the 'monthly_data_long' and 'total_monthly_data'
+combined_data <- bind_rows(monthly_data_long, total_monthly_data)
+
+# Create the plot
+ggplot(combined_data, aes(x = month, y = cows_active, color = lactation, group = lactation)) +
+  # Draw lines connecting the points
+  geom_line(size = 1.2) +  
+  # Add points for each data location
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1.5) +  
+  labs(
+    title = "Monthly Lactating Herd by Lactation Number and Total",
+    x = "Month",
+    y = "Number of Active Cows",
+    color = "Lactation Group"
+  ) +
+  theme_minimal() +  # Clean, minimal background
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for better readability
+    plot.title = element_text(size = 16, face = "bold"),  # Bold title for emphasis
+    axis.title = element_text(size = 14),  # Larger axis titles
+    legend.title = element_text(size = 12),  # Slightly larger legend title
+    legend.text = element_text(size = 10),  # Adjust legend text size for clarity
+    panel.grid.major = element_line(color = "gray90", size = 0.5),  # Lighter gridlines
+    panel.grid.minor = element_blank()  # Remove minor gridlines to keep it clean
+  )
+
+
+```
 
 ```{r}
 # Milk production by month overtime:
+
+# Filter only test data within our date range
+production_data <- production_data |>
+  filter(date_test > date_start)
 
 # Remove * from Milk and convert to numeric
 monthly_data <- production_data %>%
@@ -120,21 +255,34 @@ lowest_points <- monthly_data %>%
 
 # Plot
 ggplot(monthly_data, aes(x = month, y = avg_milk)) +
-  geom_line() +
-  geom_point(aes(color = avg_milk), size = 2) +  # Highlight the points
-  geom_text(data = lowest_points, aes(label = paste0(round(avg_milk, 2))), 
-            vjust = -1, hjust = 0.5, color = "red", size = 4) +  # Add labels on the lowest points
-  scale_x_date(date_labels = "%b %Y", date_breaks = "3 months") +  # Format month labels
+  geom_line(color = "#2C3E50", size = 1.2) +  # Line color and size
+  geom_point(aes(color = avg_milk), size = 3) +  # Point size and coloring
+  geom_text(data = lowest_points, aes(label = paste0(round(avg_milk, 2))),
+            vjust = -1, hjust = 0.5, color = "red", size = 4) +  # Labels for lowest points
+  
+  # Add additional labels for specific months 
+  geom_text(aes(label = ifelse(month %in% seq(min(month), max(month), by = "3 months"), 
+                               format(month, "%b %Y"), "")),
+            vjust = 1.5, size = 3, color = "#2980B9", angle = 45, hjust = 0.5) +  # Labels for key months
+  
+  geom_smooth(method = "loess", se = FALSE, color = "green", size = 1) +  # Smoothing line
+  
+  # Formatting
+  scale_x_date(date_labels = "%b %Y", date_breaks = "3 months") +  # Date labels
   labs(title = "Average Monthly Milk Production",
+       subtitle = "Trends and key points of milk production over time",
        x = "Month",
        y = "Average Milk Production (L)") +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate month labels for readability
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for readability
+        plot.title = element_text(face = "bold", size = 16),  # Bold title
+        plot.subtitle = element_text(size = 12),  # Subtitle size
+        axis.title = element_text(size = 14))  # Axis titles size
 
 ```
 
 ```{r}
-# Plot THI over Milk prodcution
+# Plot THI over Weekly Milk prodcution
 
 # Pull weather data from VisualConnections API. You need an API key saved as an environmental variable in your computer
 
@@ -184,23 +332,33 @@ if (!is.null(weather_data_raw)) {
     mutate(datetime = as.Date(datetime))%>%
     rename(date_weather = datetime)%>%
     mutate(THI = temp - (0.55 - 0.0055 * humidity) * (temp - 58)) 
+  
+  weather_data <- weather_data%>%
+    filter(date_weather >= date_start & date_weather <= date_end)
+  
+  # Weekly THI Averages:
+  # Group the weather data by week and calculate the weekly average THI
+  weather_weekly <- weather_data %>%
+    mutate(date_weather = floor_date(date_weather, "week")) %>%
+    group_by(date_weather) %>%
+    summarize(avg_THI = mean(THI, na.rm = TRUE))
 
   # color scale
-  weather_data <- weather_data %>%
+  weather_weekly <- weather_weekly %>%
     mutate(THI_color = case_when(
-      THI >= 70 ~ "red",       # Very high THI (above 70) - red
-      THI >= 60 ~ "orange",    # High THI (between 60 and 70) - orange
-      THI >= 50 ~ "yellow",    # Moderate THI (between 50 and 60) - yellow
-      TRUE ~ "green"           # Low THI (below 50) - green
+      avg_THI >= 70 ~ "red",       
+      avg_THI >= 60 ~ "orange",    
+      avg_THI >= 50 ~ "yellow",    
+      TRUE ~ "green"           
     ))
   
-  weather_data <- weather_data %>%
+  weather_weekly <- weather_weekly %>%
     mutate(next_date = lead(date_weather),   # Get the next date for each row (for segment plotting)
-           next_THI = lead(THI),     # Get the next THI value for each row
+           next_THI = lead(avg_THI),     # Get the next THI value for each row
            next_THI_color = lead(THI_color))  # Get the next THI color
   
   # Plot with color-changing line
-  thi_plot <- ggplot(weather_data, aes(x = date_weather, y = THI)) +
+  thi_plot <- ggplot(weather_weekly, aes(x = date_weather, y = avg_THI)) +
     geom_segment(aes(xend = next_date, yend = next_THI, color = next_THI_color), size = 1) +  # Line segments with color
     labs(title = "Thermal Heat Index (THI) Over Time",
          x = "Date",
@@ -222,9 +380,8 @@ milk_weekly <- milk_weekly %>%
   summarize(avg_milk = mean(MILK, na.rm = TRUE))
 
 # Filter for the last 12 months
-last_year <- Sys.Date() - years(1)  # Get the date for one year ago
 milk_weekly_last_year <- milk_weekly %>%
-  filter(week >= last_year)
+  filter(week >= date_start)
 
 milk_plot <- ggplot(milk_weekly_last_year, aes(x = week, y = avg_milk)) +
   geom_line(color = "green", size = 1) +  # Line for milk production
@@ -234,16 +391,56 @@ milk_plot <- ggplot(milk_weekly_last_year, aes(x = week, y = avg_milk)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-combined_plot <- thi_plot + 
-  geom_line(data = milk_weekly_last_year, aes(x = week, y = avg_milk), color = "steelblue", size = 1) +  # Add milk production line
+combined_plot <- ggplot() + 
+  # Plot the THI data with color-changing line segments
+  geom_segment(data = weather_weekly, 
+               aes(x = date_weather, y = avg_THI, xend = next_date, yend = next_THI, color = next_THI_color), 
+               size = 1.2) +  # Slightly thicker line for better visibility
+  # Plot the Milk Production as a line plot
+  geom_line(data = milk_weekly_last_year, aes(x = week, y = avg_milk), color = "steelblue", size = 1.2) +
+  
+  # Add points on the milk production line for better visual tracking
+  geom_point(data = milk_weekly_last_year, aes(x = week, y = avg_milk), color = "steelblue", size = 2) +
+  
+  # Add titles and labels
+  labs(
+    title = "THI and Weekly Average Milk Production Over the Last Year",
+    subtitle = "Weekly averages of milk production and Thermal Heat Index",
+    x = "Week",
+    y = "THI",
+    caption = "Data Source: VisualCrossing API"
+  ) +
+  
+  # Enhance the color scale for THI levels
+  scale_color_manual(values = c("green", "yellow", "orange", "red"),
+                     breaks = c("green", "yellow", "orange", "red"),
+                     labels = c("Low THI (< 50)", "Moderate THI (50-60)", "High THI (60-70)", "Very High THI (> 70)")) +
+  
+  # Modify gridlines and background for clarity
+  theme_minimal(base_size = 14) +  # Increase base size for readability
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),  # Rotate x-axis labels for readability
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text.y = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 12, face = "italic"),
+    plot.caption = element_text(hjust = 1, size = 10, color = "gray"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 11)
+  ) +
+  
+  # Secondary y-axis for milk production
   scale_y_continuous(
-    limits = c(min(c(min(weather_data$THI), min(milk_weekly_last_year$avg_milk))),
-               max(c(max(weather_data$THI), max(milk_weekly_last_year$avg_milk)))),
-    expand = c(0, 0)  # Remove extra space
-  ) + 
-  labs(title = "THI and Weekly Average Milk Production Over the Last Year",
-       subtitle = "Weekly averages of milk production and Thermal Heat Index") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+    name = "THI", 
+    sec.axis = sec_axis(~ ., name = "Milk Production (units)")
+  ) +  # You can adjust scaling between THI and Milk Production if necessary
+  
+  theme(
+    axis.title.y.right = element_text(color = "black", size = 14),
+    axis.text.y.right = element_text(color = "black", size = 12),
+    legend.position = "top"  # Position the legend at the top
+  )
 
 # Show the plot
 print(combined_plot)
