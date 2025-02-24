@@ -129,8 +129,8 @@ herd_deno <- bind_rows(deno_all_lacts,
 
 # data set create function
 fxn_create_deno <- function(label,
-                            date_start,
-                            date_end){
+                            date_start = date_start_deno,
+                            date_end = date_end_deno){
 # needs error checks  
   time_period_text <- label
 date_start <- ymd(date_start)
@@ -310,8 +310,8 @@ test_summary_herd <- test_dim |>
 fxn_dim_cat <- function(data, 
                                   num_categories = 13, 
                                   interval = 30, 
-                                  date_start,
-                                  date_end) {
+                                  date_start = date_start_deno,
+                                  date_end = date_end_deno) {
   # convert dates
   date_start <- ymd(date_start)
   date_end <- ymd(date_end)
@@ -345,14 +345,13 @@ fxn_dim_cat <- function(data,
   return(data)
 }
 
+date_start_deno <- "2025-02-12"
+date_end_deno <- "2025-02-12"
+
+
 # create data set
-deno_dim <- fxn_create_deno(label = "2024",
-                            date_start = "2024-01-01",
-                            date_end = "2024-12-31") |> 
-  fxn_dim_cat(num_categories = 13,
-                        date_start = "2024-01-01",
-                        date_end = "2024-12-31"
-                        )  
+deno_dim <- fxn_create_deno(label = "2024") |> 
+  fxn_dim_cat(num_categories = 13)  
 
 # fxn to calculate
 fxn_deno_dim <- function(data = deno_dim, lact_group_var){
