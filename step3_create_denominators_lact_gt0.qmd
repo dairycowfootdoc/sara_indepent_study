@@ -288,10 +288,22 @@ test_dim <- fxn_create_deno(label = "2024",
          dim_30_60 = if_else(dim_start_cat <= 2 & dim_end_cat >=2, 1, 0),
          dim_60_90 = if_else(dim_start_cat <= 3 & dim_end_cat >=3, 1, 0)
          )
+
+# test summary calc
+test_summary_herd <- test_dim |> 
+  select(-c(dim_start, dim_end, dim_end_cat, dim_start_cat)) |> 
+  group_by(time_period, lact_group_basic) |> 
+  summarise(across(contains("dim_"), ~ sum(. == 1, na.rm = TRUE))) |> 
+  ungroup() |> 
+  pivot_longer(cols = -c(time_period, lact_group_basic), 
+               names_to = "Month", 
+               values_to = "Count") |> 
+  rename(`Lactation Group` = lact_group_basic )
+
 ```
 
 ```{r}
-# chat gpt solution
+# function to create data set used to calc DIM denominators
 
 # 13 categories gives upto 390
 create_dim_categories <- function(data, 
@@ -327,7 +339,7 @@ create_dim_categories <- function(data,
   return(data)
 }
 
-# Usage example
+# create data set
 test_dim <- fxn_create_deno(label = "2024",
                             date_start = "2024-01-01",
                             date_end = "2024-12-31") |> 
@@ -335,6 +347,47 @@ test_dim <- fxn_create_deno(label = "2024",
                         date_start = "2024-01-01",
                         date_end = "2024-12-31"
                         )  
+
+# fxn to calculuate
+fxn_deno_dim <- function(data, lact_group_var){
+  data <- data |> 
+  select(-c(dim_start, dim_end, dim_end_cat, dim_start_cat)) |> 
+  group_by(time_period, lact_group_basic) |> 
+  summarise(across(contains("dim_"), ~ sum(. == 1, na.rm = TRUE))) |> 
+  ungroup() |> 
+  pivot_longer(cols = -c(time_period, lact_group_basic), 
+               names_to = "Month", 
+               values_to = "Count") |> 
+  rename(`Lactation Group` = lact_group_basic )
+
+  
+}
+test_summary_herd <- test_dim |> 
+  select(-c(dim_start, dim_end, dim_end_cat, dim_start_cat)) |> 
+  group_by(time_period, lact_group_basic) |> 
+  summarise(across(contains("dim_"), ~ sum(. == 1, na.rm = TRUE))) |> 
+  ungroup() |> 
+  pivot_longer(cols = -c(time_period, lact_group_basic), 
+               names_to = "Month", 
+               values_to = "Count") |> 
+  rename(`Lactation Group` = lact_group_basic )
+
+
+test_summary_lact_5 <- test_dim |> 
+  select(-c(dim_start, dim_end, dim_end_cat, dim_start_cat)) |> 
+  group_by(time_period, lact_group_5) |> 
+  summarise(across(contains("dim_"), ~ sum(. == 1, na.rm = TRUE))) |>
+  ungroup() |> 
+  pivot_longer(cols = -c(time_period, lact_group_5), 
+               names_to = "Month", 
+               values_to = "Count") 
+
+
+
+
+
+
+
 ```
 
 
