@@ -555,40 +555,40 @@ repro_data <- repro_data %>%
 
 #       *Eligibility Logic:*
 
-# Pre-filter events to only include relevant events before each period's end date
+# Pre-filter events to only include PREG and ABORT events
 events_filtered <- events_formatted %>%
   filter(event %in% c("PREG", "ABORT"))
 
-# Create a function to find the latest PREG and ABORT events before each period_end_date
+# Function to get the latest PREG and ABORT event before each period_end_date
 get_latest_preg_abort_events <- function(repro_data, events_filtered) {
-  repro_data %>%
-    # Perform a left join to bring in all repro_data rows
-    left_join(
-      events_filtered %>%
-        group_by(id_animal_lact) %>%
-        summarise(
-          latest_preg_event = max(ifelse(event == "PREG", date_event, NA), na.rm = TRUE),
-          latest_abort_event = max(ifelse(event == "ABORT", date_event, NA), na.rm = TRUE),
-          .groups = "drop"  # Ensure it returns a dataframe without the group structure
-        ) %>%
-        mutate(
-          latest_preg_event = as.Date(latest_preg_event),
-          latest_abort_event = as.Date(latest_abort_event)
-        ),
-      by = "id_animal_lact"
-    ) %>%
-    # Keep only events before the period_end_date
+  # Find the most recent PREG and ABORT event per id_animal_lact and period_end_date
+  latest_events <- events_filtered %>%
+    # Join period_end_date from repro_data to determine valid events
     left_join(
       repro_data %>%
         select(id_animal_lact, period_end_date) %>%
         distinct(),
       by = "id_animal_lact"
     ) %>%
-    filter(latest_preg_event <= period_end_date | is.na(latest_preg_event)) %>%
-    filter(latest_abort_event <= period_end_date | is.na(latest_abort_event))
+    # Keep only events that happened BEFORE each period_end_date
+    filter(date_event <= period_end_date) %>%
+    group_by(id_animal_lact, period_end_date) %>%
+    summarise(
+      latest_preg_event = max(ifelse(event == "PREG", date_event, NA), na.rm = TRUE),
+      latest_abort_event = max(ifelse(event == "ABORT", date_event, NA), na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      latest_preg_event = as.Date(latest_preg_event),
+      latest_abort_event = as.Date(latest_abort_event)
+    )
+
+  # Merge latest PREG and ABORT event dates into repro_data
+  repro_data %>%
+    left_join(latest_events, by = c("id_animal_lact", "period_end_date"))
 }
 
-# Apply the function to repro_data
+# Apply function to pull latest pregnancy and abortion events
 repro_data <- get_latest_preg_abort_events(repro_data, events_filtered)
 
 # Determine pregnancy status based on the latest events
@@ -602,6 +602,8 @@ repro_data <- repro_data %>%
       TRUE ~ "Not Pregnant"
     )
   )
+
+
     
   #   # Count the cows in each lactation group for this period
   #   active_counts <- active_animals %>%
