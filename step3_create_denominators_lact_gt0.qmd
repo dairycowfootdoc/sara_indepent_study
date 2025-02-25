@@ -12,6 +12,7 @@ execute:
 library(tidyverse)
 library(arrow)
 library(dtplyr)
+library(zoo)
 
 source('functions/DT_base.R')
 
@@ -307,7 +308,6 @@ ggplot(data = herd_deno_dim)+
 
 date_grouping <- "month"
 
-library(zoo)
 
 # developing code
 data <- fxn_create_deno()
@@ -397,6 +397,115 @@ data_class <- data |>
 # or  6 months
 
 
+
+
+```
+
+
+```{r}
+# sara's code
+
+data <- fxn_create_deno()
+  
+  # convert dates
+  date_start <- ymd(date_start_deno)
+  date_end <- ymd(date_end_deno)
+
+
+
+#                             Monthly Calculations:
+# Generate a list of all months in the date range
+months_list <- ymd(seq(date_start, date_end, by = "month")) 
+
+# Define a function to calculate monthly active cows by lactation group
+count_active_by_month <- function(month, data = data) {
+  # Define the start and end date for this month
+  # month_start <- ymd(month)
+  month_start <- ymd(month)
+  month_end <- ceiling_date(month_start, "month") - days(1)
+  
+  # Filter animals that were active in this month
+  active_animals <- data |> 
+    filter(
+      # Check if the cow was active in this month
+      (date_fresh <= month_end & (is.na(date_archive) | 
+                                    date_fresh <= month_end &
+                                    date_archive >= month_end))
+    )
+  
+  # Count the cows in each lactation group for this month
+  active_counts_all <- active_animals |> 
+    group_by(lact_group_basic) |> 
+    summarise(cows_active = n(), .groups = "drop") |> 
+    spread(key = lact_group_basic, value = cows_active, fill = 0) |> 
+    ungroup()
+  
+    active_counts_lact_group <- active_animals |> 
+    group_by(lact_group) |> 
+    summarise(cows_active = n(), .groups = "drop") |> 
+    spread(key = lact_group, value = cows_active, fill = 0) |> 
+    ungroup() |> 
+      select('LACT 3+')
+    
+    active_counts_lact_group_5 <- active_animals |> 
+    group_by(lact_group_5) |> 
+    summarise(cows_active = n(), .groups = "drop") |> 
+    spread(key = lact_group_5, value = cows_active, fill = 0) |> 
+    ungroup()
+  
+    active_counts <- bind_cols(active_counts_all, 
+                               active_counts_lact_group_5, 
+                               active_counts_lact_group)
+    
+  # Add the month column
+  active_counts$month <- month
+  
+  return(active_counts)
+}
+
+# Apply the function to each month in the date range
+monthly_data <- purrr::map_dfr(months_list, 
+                               count_active_by_month, 
+                               data = data) |> 
+  select(month, everything()) |> 
+  mutate(month = as.yearmon(ymd(month))
+         )
+
+# testing code
+# code below works but now needs to be functioned
+
+active_animals <- data |> 
+    filter(
+      # Check if the cow was active in this month
+      (date_fresh <= month_end & (is.na(date_archive) | 
+                                    date_fresh <= month_end &
+                                    date_archive >= month_end))
+    )
+  
+  # Count the cows in each lactation group for this month
+  active_counts_all <- active_animals |> 
+    group_by(lact_group_basic) |> 
+    summarise(cows_active = n(), .groups = "drop") |> 
+    spread(key = lact_group_basic, value = cows_active, fill = 0) |> 
+    ungroup()
+  
+    active_counts_lact_group <- active_animals |> 
+    group_by(lact_group) |> 
+    summarise(cows_active = n(), .groups = "drop") |> 
+    spread(key = lact_group, value = cows_active, fill = 0) |> 
+    ungroup() |> 
+      select('LACT 3+')
+    
+    active_counts_lact_group_5 <- active_animals |> 
+    group_by(lact_group_5) |> 
+    summarise(cows_active = n(), .groups = "drop") |> 
+    spread(key = lact_group_5, value = cows_active, fill = 0) |> 
+    ungroup()
+  
+    active_counts <- bind_cols(active_counts_all, 
+                               active_counts_lact_group_5, 
+                               active_counts_lact_group)
+  
 
 
 ```
