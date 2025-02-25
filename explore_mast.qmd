@@ -216,8 +216,11 @@ ggplot(retreatment_summary, aes(x = protocol,
 
 ```{r}
 
+only_first_treatments <- first_treatment_data %>%
+  filter(date_event == first_treatment_date)
+
 # Count total treatments by lactation group
-total_treatments_lact <- first_treatment_data %>%
+total_first_treatments_lact <- only_first_treatments %>%
   count(lact_group, name = "total_events")
 
 # Count retreatments by lactation group within 14 days
@@ -226,7 +229,7 @@ retreatments_lact <- retreatment_data %>%
   count(lact_group, name = "retreatment_events")
 
 # Merge datasets & calculate retreatment percentage
-retreatment_rates <- left_join(retreatments_lact, total_treatments_lact, by = "lact_group") %>%
+retreatment_rates <- left_join(retreatments_lact, total_first_treatments_lact, by = "lact_group") %>%
   mutate(
     retreatment_events = replace_na(retreatment_events, 0),  # Handle missing values
     retreatment_percentage_lact = (retreatment_events / total_events) * 100
