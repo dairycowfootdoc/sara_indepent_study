@@ -30,6 +30,7 @@ library(htmltools)
 library(lubridate)
 library(httr)
 library(jsonlite)
+library(gt)
 
 # Initialization and organization of initial data sets
 
@@ -187,6 +188,65 @@ monthly_data <- monthly_data |>
 Herd Demographics:
 
 ```{r}
+# Create the table from monthly_data
+monthly_table <- monthly_data |> 
+  gt() |> 
+  tab_header(
+    title = "Monthly Active Cows by Lactation Group",
+    subtitle = "Number of active cows per lactation group each month"
+  ) |> 
+  cols_label(
+    month = "Month",  # Clean up the month column label
+    total_monthly = "Total"
+  ) |> 
+  fmt_number(
+    columns = starts_with("lact_number"),  # Format numbers in lactation group columns
+    decimals = 0
+  ) |> 
+  tab_spanner(
+    label = "Lactation Groups",
+    columns = starts_with("lact_number")  # Spanner for lactation group columns
+  ) |> 
+  tab_style(
+    style = cell_text(weight = "bold", size = "large"),  # Bold and larger text for headers
+    locations = cells_column_labels()
+  ) |> 
+  tab_style(
+    style = cell_text(weight = "bold"),  # Bold the 'month' column for emphasis
+    locations = cells_column_labels(columns = vars(month))
+  ) |> 
+  tab_style(
+    style = cell_fill(color = "lightgray"),  # Light gray background for the headers
+    locations = cells_column_labels()
+  ) |> 
+  tab_style(
+    style = cell_fill(color = "#f7f7f7"),  # Light fill for every alternate row for better readability
+    locations = cells_body(rows = seq(1, nrow(monthly_data), by = 2))
+  ) |> 
+  tab_style(
+    style = cell_text(align = "right"),  # Right-align the numbers in the lactation group columns
+    locations = cells_body(columns = starts_with("lact_number"))
+  ) |> 
+  tab_style(
+    style = cell_text(align = "center"),  # Center-align the 'month' column
+    locations = cells_body(columns = vars(month))
+  ) |> 
+  tab_options(
+    table.border.top.width = px(2),  # Border above the table
+    table.border.bottom.width = px(2),  # Border below the table
+    table.font.size = 12  # Font size for table
+  )
+
+# Print the table
+monthly_table
+
+```
+
+```{r}
+
+# Remove the total_monthly column
+monthly_data_cleaned <- monthly_data |> 
+  select(-total_monthly)
 
 # Create a separate dataset for 'total_monthly' for plotting
 total_monthly_data <- monthly_data |> 
@@ -205,7 +265,6 @@ monthly_data_long <- monthly_data_cleaned |>
 
 # Combine the 'monthly_data_long' and 'total_monthly_data'
 combined_data <- bind_rows(monthly_data_long, total_monthly_data)
-
 
 # Convert Month to date format for plot
 combined_data <- combined_data |> 
@@ -456,78 +515,78 @@ print(combined_plot)
 
 ```
 
-# Reproduction
+# Reproduction - TBD
 
 ```{r}
-# 21 Day Preg Risk
-date_end <- pull_date
-
-# Create periods (21-day intervals)
-periods <- seq(date_start, date_end, by = "21 days")
-
-# Pull Fresh dates:
-fresh_data <- events_formatted %>%
-  filter(event == "FRESH") %>%
-  select(id_animal, FDAT = date_event)
-
-# Assign time periods to repro data
-repro_data <- repro_data %>% 
-  mutate(
-    period_start = findInterval(date_event, periods, rightmost.closed = TRUE),
-    period_start_date = periods[period_start]  # Assign the start date of the period
-  )
-
-# Keep only the most recent fresh event per cow
-fresh_data_recent <- fresh_data %>%
-  group_by(id_animal) %>%
-  arrange(FDAT) %>%  
-  slice_tail(n = 1) %>%   # Take only the most recent fresh event per cow
-  ungroup()
-
-# Merge fresh dates with repro events
-repro_data <- repro_data %>%
-  left_join(fresh_data_recent, by = "id_animal") %>%  # Merge with most recent fresh event
-  filter(lact_number > 0) %>%
-  group_by(id_animal, date_event) %>%
-  mutate(
-    date_fresh = max(FDAT[FDAT <= date_event], na.rm = TRUE)  # Most recent fresh date before repro event
-  ) %>%
-  ungroup()
-
-# Assign the closest future fresh date if no past fresh event exists
-repro_data <- repro_data %>%
-  group_by(id_animal, date_event) %>%
-  mutate(
-    date_fresh = ifelse(is.infinite(date_fresh), min(FDAT[FDAT > date_event], na.rm = TRUE), date_fresh)
-  ) %>%
-  ungroup()
-
-# Convert Inf values back to NA (for cows with no fresh date at all)
-repro_data <- repro_data %>%
-  mutate(date_fresh = ifelse(is.infinite(date_fresh), NA, date_fresh))
-
-# # Calculate eligible for breeding: if FDAT < next period start date - 50 AND RC = OPEN or BRED = eligible for next period
-
-# Create a data frame to store eligible cows per period
-eligible_cows_data <- lapply(seq_along(periods[-length(periods)]), function(i) {
-  period_start <- periods[i]
-  period_next <- periods[i + 1]  # Next period start date
-
-  # Filter eligible cows for this period
-  eligible_cows <- repro_data %>%
-    filter(
-      date_fresh <= (period_next - vwp),   # FDAT must be at least 50 days before next period
-      !event %in% c("PREG", "ABORT")       # Exclude cows that are pregnant or aborted
-    ) %>%
-    distinct(id_animal, period_start_date) %>%  # Ensure each cow is counted only once per period
-    summarise(eligible_cows = n())
-
-  data.frame(
-    period_start = period_start,
-    eligible_cows = ifelse(nrow(eligible_cows) > 0, eligible_cows$eligible_cows, 0)  # Handle empty cases
-  )
-}) %>%
-bind_rows()
+# # 21 Day Preg Risk
+# date_end <- pull_date
+# 
+# # Create periods (21-day intervals)
+# periods <- seq(date_start, date_end, by = "21 days")
+# 
+# # Pull Fresh dates:
+# fresh_data <- events_formatted %>%
+#   filter(event == "FRESH") %>%
+#   select(id_animal, FDAT = date_event)
+# 
+# # Assign time periods to repro data
+# repro_data <- repro_data %>% 
+#   mutate(
+#     period_start = findInterval(date_event, periods, rightmost.closed = TRUE),
+#     period_start_date = periods[period_start]  # Assign the start date of the period
+#   )
+# 
+# # Keep only the most recent fresh event per cow
+# fresh_data_recent <- fresh_data %>%
+#   group_by(id_animal) %>%
+#   arrange(FDAT) %>%  
+#   slice_tail(n = 1) %>%   # Take only the most recent fresh event per cow
+#   ungroup()
+# 
+# # Merge fresh dates with repro events
+# repro_data <- repro_data %>%
+#   left_join(fresh_data_recent, by = "id_animal") %>%  # Merge with most recent fresh event
+#   filter(lact_number > 0) %>%
+#   group_by(id_animal, date_event) %>%
+#   mutate(
+#     date_fresh = max(FDAT[FDAT <= date_event], na.rm = TRUE)  # Most recent fresh date before repro event
+#   ) %>%
+#   ungroup()
+# 
+# # Assign the closest future fresh date if no past fresh event exists
+# repro_data <- repro_data %>%
+#   group_by(id_animal, date_event) %>%
+#   mutate(
+#     date_fresh = ifelse(is.infinite(date_fresh), min(FDAT[FDAT > date_event], na.rm = TRUE), date_fresh)
+#   ) %>%
+#   ungroup()
+# 
+# # Convert Inf values back to NA (for cows with no fresh date at all)
+# repro_data <- repro_data %>%
+#   mutate(date_fresh = ifelse(is.infinite(date_fresh), NA, date_fresh))
+# 
+# # # Calculate eligible for breeding: if FDAT < next period start date - 50 AND RC = OPEN or BRED = eligible for next period
+# 
+# # Create a data frame to store eligible cows per period
+# eligible_cows_data <- lapply(seq_along(periods[-length(periods)]), function(i) {
+#   period_start <- periods[i]
+#   period_next <- periods[i + 1]  # Next period start date
+# 
+#   # Filter eligible cows for this period
+#   eligible_cows <- repro_data %>%
+#     filter(
+#       date_fresh <= (period_next - vwp),   # FDAT must be at least 50 days before next period
+#       !event %in% c("PREG", "ABORT")       # Exclude cows that are pregnant or aborted
+#     ) %>%
+#     distinct(id_animal, period_start_date) %>%  # Ensure each cow is counted only once per period
+#     summarise(eligible_cows = n())
+# 
+#   data.frame(
+#     period_start = period_start,
+#     eligible_cows = ifelse(nrow(eligible_cows) > 0, eligible_cows$eligible_cows, 0)  # Handle empty cases
+#   )
+# }) %>%
+# bind_rows()
 
   
 # Calculate # preg: 
@@ -560,8 +619,28 @@ bind_rows()
 # Lameness
 
 ```{r}
+# Lameness events by DIM
+
+graph <- ggplot(lame_data, aes(x = dim_event)) +
+  geom_histogram(binwidth = 10, fill = "steelblue", color = "black", alpha = 0.7) +
+  theme_minimal(base_size = 14) +
+  facet_wrap(vars(event), ncol = 1, scales = "free") +
+  labs(
+    title = "Distribution of Lameness Events Over Days in Milk",
+    x = "Days in Milk",
+    y = "Count"
+  ) +
+  theme(
+    panel.grid.major = element_line(color = "gray80"),
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(size = 14, face = "bold")
+  )
+
+print(graph)
+```
+
+```{r}
 #| fig-height: 8
-# count y vars
 
 summarize_lame_events<-lame_data |> 
   group_by(event, protocols_remaining_after_numbers1) |> 
@@ -594,6 +673,55 @@ summarize_lame_events <- summarize_lame_events %>%
   theme(legend.position = "none",
         # axis.text.y = element_text(size = 6)
   )
+```
+
+```{r}
+# Lameness events by DIM and event type
+library(dplyr)
+library(ggplot2)
+library(viridis)
+
+# Summarize data
+summarized_lame_events <- lame_data |> 
+  group_by(dim_event, event, protocols_remaining_after_numbers1) |> 
+  summarise(count_rows = n(), .groups = "drop") |> 
+  mutate(event_type = factor(protocols_remaining_after_numbers1),
+         event = factor(event),
+         event_type = if_else(is.na(event_type), "Trim Only", event_type))
+
+# Identify the top 5 most frequent event types
+top_5_events <- summarized_lame_events |> 
+  group_by(event_type) |> 
+  summarise(total_count = sum(count_rows)) |> 
+  arrange(desc(total_count)) |> 
+  slice_head(n = 5) |> 
+  pull(event_type)
+
+# Filter dataset to include only top 5 event types
+summarized_lame_events <- summarized_lame_events |> 
+  filter(event_type %in% top_5_events)
+
+# Plot stacked bar graph with 30-day tick marks on x-axis
+ggplot(summarized_lame_events, aes(x = dim_event, y = count_rows, fill = event_type)) +
+  geom_col(width = 14, position = "stack") +  # Use geom_col for numeric x-axis
+  scale_fill_viridis_d() +  # Colorblind-friendly palette
+  scale_x_continuous(breaks = seq(0, max(summarized_lame_events$dim_event), by = 60)) +  # Tick marks every 30 days
+  theme_minimal(base_size = 14) +
+  facet_wrap(vars(event), ncol = 1, scales = "free_y") +  # Separate facets for each event
+  labs(
+    title = "Stacked Bar Graph of Lameness Events by Days in Milk",
+    x = "Days in Milk",
+    y = "Count of Events",
+    fill = "Event Type"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for readability
+    panel.grid.major = element_line(color = "gray80", size = 0.3),  # Thinner grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    strip.text = element_text(size = 14, face = "bold"),
+    legend.position = "right"
+  )
+
 ```
 
 # Mastitis
