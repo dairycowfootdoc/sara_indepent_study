@@ -603,25 +603,27 @@ repro_data <- repro_data %>%
     )
   )
 
+count_active_by_period <- function(repro_data) {
+  repro_data %>%
+    # Keep only cows eligible to be bred
+    filter(
+      !is.na(date_fresh),  # Ensure fresh date exists
+      VWP_date <= period_end_date, # Ensure passed VWP
+      is.na(date_archive) | date_archive >= period_start_date, # Ensure alive
+      pregnant_status == "Not Pregnant"  # Exclude pregnant cows
+    ) %>%
+    # Count cows per lactation group within each period
+    group_by(period_start_date, lact_number) %>%
+    summarise(cows_active = n(), .groups = "drop") %>%
+    # Pivot lactation groups into columns
+    pivot_wider(names_from = lact_number, values_from = cows_active, values_fill = 0) %>%
+    # Add total cows per period
+    mutate(total_period = rowSums(select(., -period_start_date), na.rm = TRUE)) %>%
+    arrange(period_start_date)  # Ensure chronological order
+}
 
+active_counts_all_periods <- count_active_by_period(repro_data)
     
-  #   # Count the cows in each lactation group for this period
-  #   active_counts <- active_animals %>%
-  #     group_by(lact_number) %>%
-  #     summarise(cows_active = n(), .groups = "drop") %>%
-  #     spread(key = lact_number, value = cows_active, fill = 0)
-  #   
-  #   # Add the period column
-  #   active_counts$period_start_date <- period_start_date
-  #   
-  #   # Add a total count column by summing across lactation groups
-  #   active_counts$total_period <- rowSums(active_counts[, -which(names(active_counts) == "period_start_date")], na.rm = TRUE)
-  #   
-  #   # Append the counts for this period to the final results
-  #   active_counts_all_periods <- bind_rows(active_counts_all_periods, active_counts)
-  # 
-  # return(active_counts_all_periods)
-
 ```
 
 ```{r}
