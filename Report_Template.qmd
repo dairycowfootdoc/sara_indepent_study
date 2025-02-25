@@ -104,16 +104,13 @@ date_end_month <- floor_date(pull_date, "month") %m+% months(1) - days(1) # set 
 
 
 filtered_animals <- animal_lactations |>
-  filter(date_fresh <= date_end) |>  # Filter cows that freshened before date_end
   mutate(year_fresh = year(date_fresh)) |>  # Find freshening year
   filter(lact_number > 0) |>  # Keep only lactating cows
-  filter(
-    # Cows that freshened before start date but still active
-    (date_fresh <= date_start & (date_archive_max >= date_start | is.na(date_archive_max))) |
-    # Cows that freshened after start date but before end
-    (date_fresh >= date_start & date_archive_max <= date_end) |
-    (date_fresh >= date_start & is.na(date_archive_max))  # Keep animals with no archive date
-  ) 
+  filter(date_archive <= date_end | is.na(date_archive)) |> # Ask about this?
+  filter(date_fresh<= date_start & date_archive_max >= date_start |
+           date_fresh<= date_start & is.na(date_archive_max) |
+           date_fresh >= date_start & date_archive_max <= date_end|
+           date_fresh >= date_start & is.na(date_archive_max))
 
 # Summarize total active cows (unique count per year)
 total_cows <- filtered_animals |> 
@@ -122,17 +119,21 @@ total_cows <- filtered_animals |>
   ungroup() |> 
   group_by(year_fresh) |> 
   summarise(cows_total = n()) |>  # Get total cows
-  select(year_fresh, cows_total)  # Remove lact_groups column
+  mutate(lact_group = "Total")
 
 # Summarize by lactation group (lact_number)
 summary_lact <- filtered_animals |> 
   group_by(year_fresh, lact_number) |> 
-  summarise(cows_total = n(), .groups = "drop") |>  # Count cows in each lactation group
+  summarize(count_animals = n_distinct(id_animal)) |>  # Count cows in each lactation group
   ungroup() |> 
   mutate(lact_number = ifelse(is.na(lact_number), "Total", lact_number))  # Replace NA with "Total"
 
 # Combine both summary datasets
-summary_lact_final <- bind_rows(total_cows, summary_lact)
+summary_lact_final <- bind_rows(total_cows, summary_lact) |> 
+  group_by(lact_number) |> 
+  summarise(
+    total_animals_by_lact = sum(count_animals, na.rm = TRUE))|> 
+  ungroup()
 
 #                             Monthly Calculations:
 # Generate a list of all months in the date range
@@ -148,9 +149,11 @@ count_active_by_month <- function(month, filtered_animals) {
   active_animals <- filtered_animals |> 
     filter(
       # Check if the cow was active in this month
-      (date_fresh <= month_end & (is.na(date_archive_max) | date_archive_max >= month_start))
-    )
-  
+      (date_fresh<= month_start & date_archive_max >= month_start |
+           date_fresh<= month_start & is.na(date_archive_max) |
+           date_fresh >= month_start & date_archive_max <= month_end|
+           date_fresh >= month_start & is.na(date_archive_max)))
+    
   # Count the cows in each lactation group for this month
   active_counts <- active_animals |> 
     group_by(lact_number) |> 
@@ -184,9 +187,6 @@ monthly_data <- monthly_data |>
 Herd Demographics:
 
 ```{r}
-# Remove 'total_monthly' column from the original dataset
-monthly_data_cleaned <- monthly_data |> 
-  select(-total_monthly)  # Remove the total_monthly column
 
 # Create a separate dataset for 'total_monthly' for plotting
 total_monthly_data <- monthly_data |> 
@@ -206,11 +206,13 @@ monthly_data_long <- monthly_data_cleaned |>
 # Combine the 'monthly_data_long' and 'total_monthly_data'
 combined_data <- bind_rows(monthly_data_long, total_monthly_data)
 
-# Create the plot
+
+# Convert Month to date format for plot
+combined_data <- combined_data |> 
+  mutate(month = as.Date(parse_date_time(month, orders = "my")))  
+
 ggplot(combined_data, aes(x = month, y = cows_active, color = lactation, group = lactation)) +
-  # Draw lines connecting the points
   geom_line(size = 1.2) +  
-  # Add points for each data location
   geom_point(size = 4, shape = 21, fill = "white", stroke = 1.5) +  
   labs(
     title = "Monthly Lactating Herd by Lactation Number and Total",
@@ -218,17 +220,17 @@ ggplot(combined_data, aes(x = month, y = cows_active, color = lactation, group =
     y = "Number of Active Cows",
     color = "Lactation Group"
   ) +
-  theme_minimal() +  # Clean, minimal background
+  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month") +  # Ensure correct order
+  theme_minimal() +  
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for better readability
-    plot.title = element_text(size = 16, face = "bold"),  # Bold title for emphasis
-    axis.title = element_text(size = 14),  # Larger axis titles
-    legend.title = element_text(size = 12),  # Slightly larger legend title
-    legend.text = element_text(size = 10),  # Adjust legend text size for clarity
-    panel.grid.major = element_line(color = "gray90", size = 0.5),  # Lighter gridlines
-    panel.grid.minor = element_blank()  # Remove minor gridlines to keep it clean
+    axis.text.x = element_text(angle = 45, hjust = 1),  
+    plot.title = element_text(size = 16, face = "bold"),  
+    axis.title = element_text(size = 14),  
+    legend.title = element_text(size = 12),  
+    legend.text = element_text(size = 10),  
+    panel.grid.major = element_line(color = "gray90", size = 0.5),  
+    panel.grid.minor = element_blank()  
   )
-
 
 ```
 
