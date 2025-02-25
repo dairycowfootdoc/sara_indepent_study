@@ -61,7 +61,7 @@ lame_data <- events_formatted %>%
 # Reroduction
 repro_data <- events_formatted %>%
   filter(event_type %in% c("repro"))%>%
-  select(id_animal, date_birth, lact_number, event, date_event, dim_event, date_repro_dx)
+  select(id_animal, id_animal_lact, date_birth, lact_number, event, date_event, dim_event, date_repro_dx)
 
 vwp <- 50 # Set to herd's VWP
 
@@ -518,97 +518,107 @@ print(combined_plot)
 # Reproduction - TBD
 
 ```{r}
-# # 21 Day Preg Risk
-# date_end <- pull_date
-# 
-# # Create periods (21-day intervals)
-# periods <- seq(date_start, date_end, by = "21 days")
-# 
-# # Pull Fresh dates:
-# fresh_data <- events_formatted %>%
-#   filter(event == "FRESH") %>%
-#   select(id_animal, FDAT = date_event)
-# 
-# # Assign time periods to repro data
-# repro_data <- repro_data %>% 
-#   mutate(
-#     period_start = findInterval(date_event, periods, rightmost.closed = TRUE),
-#     period_start_date = periods[period_start]  # Assign the start date of the period
-#   )
-# 
-# # Keep only the most recent fresh event per cow
-# fresh_data_recent <- fresh_data %>%
-#   group_by(id_animal) %>%
-#   arrange(FDAT) %>%  
-#   slice_tail(n = 1) %>%   # Take only the most recent fresh event per cow
-#   ungroup()
-# 
-# # Merge fresh dates with repro events
-# repro_data <- repro_data %>%
-#   left_join(fresh_data_recent, by = "id_animal") %>%  # Merge with most recent fresh event
-#   filter(lact_number > 0) %>%
-#   group_by(id_animal, date_event) %>%
-#   mutate(
-#     date_fresh = max(FDAT[FDAT <= date_event], na.rm = TRUE)  # Most recent fresh date before repro event
-#   ) %>%
-#   ungroup()
-# 
-# # Assign the closest future fresh date if no past fresh event exists
-# repro_data <- repro_data %>%
-#   group_by(id_animal, date_event) %>%
-#   mutate(
-#     date_fresh = ifelse(is.infinite(date_fresh), min(FDAT[FDAT > date_event], na.rm = TRUE), date_fresh)
-#   ) %>%
-#   ungroup()
-# 
-# # Convert Inf values back to NA (for cows with no fresh date at all)
-# repro_data <- repro_data %>%
-#   mutate(date_fresh = ifelse(is.infinite(date_fresh), NA, date_fresh))
-# 
-# # # Calculate eligible for breeding: if FDAT < next period start date - 50 AND RC = OPEN or BRED = eligible for next period
-# 
-# # Create a data frame to store eligible cows per period
-# eligible_cows_data <- lapply(seq_along(periods[-length(periods)]), function(i) {
-#   period_start <- periods[i]
-#   period_next <- periods[i + 1]  # Next period start date
-# 
-#   # Filter eligible cows for this period
-#   eligible_cows <- repro_data %>%
-#     filter(
-#       date_fresh <= (period_next - vwp),   # FDAT must be at least 50 days before next period
-#       !event %in% c("PREG", "ABORT")       # Exclude cows that are pregnant or aborted
-#     ) %>%
-#     distinct(id_animal, period_start_date) %>%  # Ensure each cow is counted only once per period
-#     summarise(eligible_cows = n())
-# 
-#   data.frame(
-#     period_start = period_start,
-#     eligible_cows = ifelse(nrow(eligible_cows) > 0, eligible_cows$eligible_cows, 0)  # Handle empty cases
-#   )
-# }) %>%
-# bind_rows()
+# 21 Day Preg Risk
+date_end <- pull_date
 
-  
-# Calculate # preg: 
+# Create periods (21-day intervals)
+periods <- seq(date_start, date_end, by = "21 days")
+
+# Ensure lact_number > 0
+repro_data <- repro_data %>%
+  filter(lact_number > 0)
+
+# Pull Fresh dates:
+fresh_data <- animal_lactations %>%
+  select(id_animal_lact, date_fresh, date_archive)
+
+# Merge fresh dates with repro events by id_animal_lact 
+repro_data <- repro_data %>%
+  left_join(fresh_data, by = "id_animal_lact")
+
+# Assign time periods to repro data
+repro_data <- repro_data %>%
+  mutate(
+    period_start = findInterval(date_event, periods, rightmost.closed = TRUE),
+    period_start_date = periods[pmax(period_start, 1)],  # Assign start date
+    period_end_date = period_start_date + 20,  # 21-day period
+    period_end_date = case_when(
+      period_end_date > date_end ~ date_end,  # Reset if > date_end
+      TRUE ~ period_end_date  # Otherwise, keep the calculated end date
+    )
+  )
+
+# Add VWP date (50 days after fresh date)
+repro_data <- repro_data %>%
+  mutate(VWP_date = as.Date(date_fresh) + vwp)
 
 
-# Count unique bred events per period for each cow
-# bred_count <- bred_data %>%
-#   group_by(id_animal, period_start) %>%
-#   summarise(unique_bred_events = n_distinct(date_event), .groups = "drop")
+#       *Eligibility Logic:*
 
-# Count unique pregnancy events per period for each cow
-# preg_count <- preg_data %>%
-#   group_by(id_animal, period_start) %>%
-#   summarise(unique_preg_events = n_distinct(date_event), .groups = "drop")
+# Pre-filter events to only include relevant events before each period's end date
+events_filtered <- events_formatted %>%
+  filter(event %in% c("PREG", "ABORT"))
 
-# Combine both counts and calculate the 21-day pregnancy risk
-# preg_risk_data <- bred_count %>%
-#   left_join(preg_count, by = c("id_animal", "period_start")) %>%
-#   mutate(
-#     preg_risk = ifelse(unique_bred_events > 0, unique_preg_events / unique_bred_events, NA)
-#   )
+# Create a function to find the latest PREG and ABORT events before each period_end_date
+get_latest_preg_abort_events <- function(repro_data, events_filtered) {
+  repro_data %>%
+    # Perform a left join to bring in all repro_data rows
+    left_join(
+      events_filtered %>%
+        group_by(id_animal_lact) %>%
+        summarise(
+          latest_preg_event = max(ifelse(event == "PREG", date_event, NA), na.rm = TRUE),
+          latest_abort_event = max(ifelse(event == "ABORT", date_event, NA), na.rm = TRUE),
+          .groups = "drop"  # Ensure it returns a dataframe without the group structure
+        ) %>%
+        mutate(
+          latest_preg_event = as.Date(latest_preg_event),
+          latest_abort_event = as.Date(latest_abort_event)
+        ),
+      by = "id_animal_lact"
+    ) %>%
+    # Keep only events before the period_end_date
+    left_join(
+      repro_data %>%
+        select(id_animal_lact, period_end_date) %>%
+        distinct(),
+      by = "id_animal_lact"
+    ) %>%
+    filter(latest_preg_event <= period_end_date | is.na(latest_preg_event)) %>%
+    filter(latest_abort_event <= period_end_date | is.na(latest_abort_event))
+}
 
+# Apply the function to repro_data
+repro_data <- get_latest_preg_abort_events(repro_data, events_filtered)
+
+# Determine pregnancy status based on the latest events
+repro_data <- repro_data %>%
+  mutate(
+    pregnant_status = case_when(
+      !is.na(latest_abort_event) & latest_abort_event > latest_preg_event & latest_abort_event <= period_start_date ~ "Not Pregnant",
+      !is.na(date_fresh) & date_fresh > latest_preg_event & date_fresh <= period_start_date ~ "Not Pregnant",  
+      !is.na(latest_preg_event) & (is.na(latest_abort_event) | latest_abort_event < latest_preg_event) & 
+        (is.na(date_fresh) | date_fresh < latest_preg_event) ~ "Pregnant",
+      TRUE ~ "Not Pregnant"
+    )
+  )
+    
+  #   # Count the cows in each lactation group for this period
+  #   active_counts <- active_animals %>%
+  #     group_by(lact_number) %>%
+  #     summarise(cows_active = n(), .groups = "drop") %>%
+  #     spread(key = lact_number, value = cows_active, fill = 0)
+  #   
+  #   # Add the period column
+  #   active_counts$period_start_date <- period_start_date
+  #   
+  #   # Add a total count column by summing across lactation groups
+  #   active_counts$total_period <- rowSums(active_counts[, -which(names(active_counts) == "period_start_date")], na.rm = TRUE)
+  #   
+  #   # Append the counts for this period to the final results
+  #   active_counts_all_periods <- bind_rows(active_counts_all_periods, active_counts)
+  # 
+  # return(active_counts_all_periods)
 
 ```
 
