@@ -668,6 +668,10 @@ animals_repro <- animals_repro %>%
 animals_repro <- animals_repro %>%
   filter(date_archive >= date_start | is.na(date_archive))
 
+# get rid of animals with no fresh date (lact 32)
+animals_repro <- animals_repro %>%
+  filter(!is.na(date_fresh_animal))
+
 # carry down pregnant status 
 animals_repro <- animals_repro %>%
   group_by(id_animal_lact) %>%  # Process per animal
@@ -733,7 +737,7 @@ animals_repro <- animals_repro %>%
   ) %>%
   ungroup()
 
-#Create eligibility data set that only has one entry per cow per period with eligibiity status
+#Create eligibility data set that only has one entry per cow per period with eligibiity status. If 0 in period, entry is 0, if all 1's then entry is 1
 eligible_cows <- animals_repro %>% 
   filter(!is.na(eligibility_status)) %>%
   select(id_animal_lact, period_number, period_start_date, period_end_date, eligibility_status) %>%
