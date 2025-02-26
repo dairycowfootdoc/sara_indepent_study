@@ -74,22 +74,22 @@ youngstock_data <- events_formatted%>%
 # Save in data/intermediate_files/production_data. It should be the only file in there
 
 # Define file path
-production_file <- "data/intermediate_files/production_data/production.parquet"
-
-# Read Parquet file
-production_data <- read_parquet(production_file)
-
-# Reformat the data
-production_data <- production_data %>%
-  mutate(
-    id_animal = paste0(as.character(ID), "_", as.character(BDAT)) #Create id_animal
-  ) %>%
-  rename(id = ID) %>%  
-  rename(date_birth = BDAT)%>%
-  rename(date_test = TestDate) %>%  
-  mutate(date_test = mdy(date_test))%>% # Convert to Date (Adjust format if needed)
-  relocate(id_animal, .before = everything())  # Move id_animal to the first column
-
+# production_file <- "data/intermediate_files/production_data/production.parquet"
+# 
+# # Read Parquet file
+# production_data <- read_parquet(production_file)
+# 
+# # Reformat the data
+# production_data <- production_data %>%
+#   mutate(
+#     id_animal = paste0(as.character(ID), "_", as.character(BDAT)) #Create id_animal
+#   ) %>%
+#   rename(id = ID) %>%  
+#   rename(date_birth = BDAT)%>%
+#   rename(date_test = TestDate) %>%  
+#   mutate(date_test = mdy(date_test))%>% # Convert to Date (Adjust format if needed)
+#   relocate(id_animal, .before = everything())  # Move id_animal to the first column
+# 
 
 
 ```
@@ -543,6 +543,7 @@ repro_data <- repro_data %>%
 # set up animal data
 animals_repro <- animal_lactations %>% 
   filter(lact_number > 0) %>%
+  filter(lact_number != 32) |> 
   select(id_animal_lact, date_fresh, date_archive) %>% 
   rename(date_fresh_animal = date_fresh)
 
@@ -707,24 +708,24 @@ animals_repro <- animals_repro %>%
   )
 
 # Create eligibility status 
-animals_repro <- animals_repro %>%
+animals_repro_test <- animals_repro %>%
+  # to get rid of cow that are before VWP
+  # keeping them screws the lag below
+  filter(vwp_status == 1) |> 
   group_by(id_animal_lact) %>%
   arrange(id_animal_lact, period_start_date) %>%
   mutate(
     # Set eligibility_status to 1 only when vwp_status == 1 and pregnant_status == 0
+    # Set to 1 if both conditions are met
     eligibility_status = case_when(
-      vwp_status == 1 & pregnant_status == 0 ~ 1,  # Set to 1 if both conditions are met
+      # event == "DNB" ~ 0,
+      # !is.na(date_archive) & 
+      #   date_archive >= period_start_date
+      # & date_archive <= period_end_date ~ 0,
+      vwp_status == 1 & pregnant_status == 0 ~ 1,
       TRUE ~ 0  # Otherwise, set to 0 by default
     )
-  ) %>%
-  mutate(
-    # For rows with a DNB event or date_archive within the period, set eligibility_status to 0
-    eligibility_status = case_when(
-      event == "DNB" ~ 0,  # If event is DNB, set eligibility_status to 0
-      !is.na(date_archive) & date_archive >= period_start_date & date_archive <= period_end_date ~ 0,  # If date_archive is within the period, set eligibility_status to 0
-      TRUE ~ eligibility_status  # Otherwise, retain the previous eligibility_status value
-    )
-  ) %>%
+  ) |> 
   mutate(
     # Propagate eligibility_status = 0 for subsequent rows if eligibility_status is 0 in the previous row
     eligibility_status = if_else(
@@ -734,7 +735,7 @@ animals_repro <- animals_repro %>%
   ungroup()
 
 #Create eligibility data set that only has one entry per cow per period with eligibiity status
-eligible_cows <- animals_repro %>% 
+eligible_cows <- animals_repro_test %>% 
   filter(!is.na(eligibility_status)) %>%
   select(id_animal_lact, period_number, period_start_date, period_end_date, eligibility_status) %>%
   group_by(id_animal_lact, period_number) %>%
