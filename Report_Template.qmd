@@ -547,11 +547,13 @@ animals_repro <- animal_lactations %>%
   rename(date_fresh_animal = date_fresh)
 
 # Create row for every animal in every period
-all_periods <- expand.grid(id_animal_lact = unique(animals_repro$id_animal_lact), 
-                           period_start_date = periods) %>%
+all_periods <- animals_repro %>%
+  distinct(id_animal_lact) %>%  # Get unique id_animal_lact
+  mutate(id_animal_lact = as.character(id_animal_lact)) %>%  # Ensure it's character type for joining
+  crossing(period_start_date = periods) %>%  # Cross join with periods to get 18 rows per id_animal_lact
   mutate(
     period_end_date = period_start_date + 20,  # Assign 21-day period
-    period_number = match(period_start_date, periods)  # Assign period number
+    period_number = match(period_start_date, periods)  # Assign period number based on periods vector
   )
 
 # Merge with existing animal_repro data
@@ -662,9 +664,9 @@ animals_repro <- animals_repro %>%
     )
   )
 
+# get rid of archived cows
 animals_repro <- animals_repro %>%
   filter(date_archive >= date_start | is.na(date_archive))
-
 
 # carry down pregnant status 
 animals_repro <- animals_repro %>%
@@ -696,12 +698,60 @@ animals_repro <- animals_repro %>%
     pregnant_status = ifelse(is.na(pregnant_status), 0, pregnant_status)
   )
 
+# convert binary to numeric for later use
 animals_repro <- animals_repro %>%
   mutate(
     bred_status = as.numeric(bred_status),  # Convert to numeric
     pregnant_status = as.numeric(pregnant_status),  # Convert to numeric
     vwp_status = as.numeric(vwp_status)  # Convert to numeric
   )
+
+# Create eligibility status 
+animals_repro <- animals_repro %>%
+  group_by(id_animal_lact) %>%
+  arrange(id_animal_lact, period_start_date) %>%
+  mutate(
+    # Set eligibility_status to 1 only when vwp_status == 1 and pregnant_status == 0
+    eligibility_status = case_when(
+      vwp_status == 1 & pregnant_status == 0 ~ 1,  # Set to 1 if both conditions are met
+      TRUE ~ 0  # Otherwise, set to 0 by default
+    )
+  ) %>%
+  mutate(
+    # For rows with a DNB event or date_archive within the period, set eligibility_status to 0
+    eligibility_status = case_when(
+      event == "DNB" ~ 0,  # If event is DNB, set eligibility_status to 0
+      !is.na(date_archive) & date_archive >= period_start_date & date_archive <= period_end_date ~ 0,  # If date_archive is within the period, set eligibility_status to 0
+      TRUE ~ eligibility_status  # Otherwise, retain the previous eligibility_status value
+    )
+  ) %>%
+  mutate(
+    # Propagate eligibility_status = 0 for subsequent rows if eligibility_status is 0 in the previous row
+    eligibility_status = if_else(
+      lag(eligibility_status, default = 1) == 0, 0, eligibility_status  # If previous row has eligibility_status = 0, set current to 0
+    )
+  ) %>%
+  ungroup()
+
+#Create eligibility data set that only has one entry per cow per period with eligibiity status
+eligible_cows <- animals_repro %>% 
+  filter(!is.na(eligibility_status)) %>%
+  select(id_animal_lact, period_number, period_start_date, period_end_date, eligibility_status) %>%
+  group_by(id_animal_lact, period_number) %>%
+  mutate(
+    eligibility_status = if_else(all(eligibility_status == 1), 1, 0)
+  ) %>%
+  distinct(id_animal_lact, period_number, .keep_all = TRUE) %>%
+  ungroup()
+
+# Create eligibility Table
+eligible_cows_summary <- eligible_cows %>%
+  filter(eligibility_status == 1) %>%
+  mutate(lact_number = sub(".*_(\\d+)$", "\\1", id_animal_lact)) %>%  # Extract lact_number from id_animal_lact
+  group_by(period_number, lact_number) %>%
+  summarise(total_eligible_cows = n(), .groups = "drop") %>%
+  pivot_wider(names_from = lact_number, values_from = total_eligible_cows, values_fill = list(total_eligible_cows = 0)) %>%
+  mutate(total = rowSums(select(., -period_number), na.rm = TRUE))  # Add total column
 
 
 
