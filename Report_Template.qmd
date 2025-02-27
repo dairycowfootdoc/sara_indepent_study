@@ -580,29 +580,43 @@ events_filtered <- events_filtered %>%
     animals_repro %>%
       select(id_animal_lact, period_number, period_start_date, period_end_date),
     by = c("id_animal_lact")
-  )
+  ) 
+
+events_filtered <- events_filtered %>%
+  filter(date_archived > date_start | is.na(date_archived))
 
 # Get the latest PREG and ABORT event before each period_start_date
-latest_events <- events_filtered %>%
-  # Keep only events that happened before the period_start_date (in the same period)
-  filter(date_event < period_end_date) %>%
-  group_by(id_animal_lact, period_number, period_start_date, period_end_date) %>%
-  summarise(
-    # Get the latest PREG event before the period_end_date
-    latest_preg_event = max(ifelse(event == "PREG", date_event, NA), na.rm = TRUE),
-    # Get the latest ABORT event before the period_end_date
-    latest_abort_event = max(ifelse(event == "ABORT", date_event, NA), na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    latest_preg_event = as.Date(latest_preg_event),
-    latest_abort_event = as.Date(latest_abort_event)
+latest_preg_events <- events_filtered %>%
+  filter(event == "PREG") %>%  # Keep only the PREG events
+  group_by(id_animal_lact, period_start_date) %>%
+  slice_max(date_event, n = 1) %>%  # Get the most recent PREG event
+  rename(latest_preg_event = date_event) %>%  # Rename the date column
+  ungroup()
+
+# Get the most recent ABORT event for each animal in each period
+latest_abort_events <- events_filtered %>%
+  filter(event == "ABORT") %>%  # Keep only the ABORT events
+  group_by(id_animal_lact, period_start_date) %>%
+  slice_max(date_event, n = 1) %>%  # Get the most recent ABORT event
+  rename(latest_abort_event = date_event) %>%  # Rename the date column
+  ungroup()
+
+latest_events <- latest_preg_events %>%
+  left_join(
+    latest_abort_events %>% select(id_animal_lact, period_start_date, latest_abort_event),  # Only keep relevant columns from latest_abort_events
+    by = c("id_animal_lact", "period_start_date")
   )
+
+
+
 
 # Merge the latest PREG and ABORT event dates back into animals_repro
 animals_repro <- animals_repro %>%
-  left_join(latest_events, by = c("id_animal_lact", "period_number", "period_start_date", "period_end_date"))
-
+  left_join(
+    latest_events %>%
+      select(id_animal_lact, period_number, latest_preg_event, latest_abort_event),  # Only keep the relevant columns
+    by = c("id_animal_lact", "period_number")  # Match on id_animal_lact and period_number
+  )
 
 # Merge data - assign events to animal and period
 animals_repro <- animals_repro %>%
