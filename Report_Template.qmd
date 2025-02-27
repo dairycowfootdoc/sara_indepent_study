@@ -685,6 +685,7 @@ animals_repro_gc2 <- animals_repro_gc %>%
 
 # this tags breds and also deals with problems due to multiple events so I think afte this we can do unique to remove duplicate times
 animals_repro_gc3 <- animals_repro_gc2 %>% 
+  lazy_dt() |> 
   group_by(id_animal_lact, period_end_date) %>%
   # if there is a bred event in the time period she is bred (1)
   mutate(
@@ -703,7 +704,8 @@ animals_repro_gc3 <- animals_repro_gc2 %>%
   # get rid of duplicats in periods due to multiple events during time period
   distinct(id_animal_lact, period_number, .keep_all = TRUE) |> 
   # get rid of timeperiods after archive date
-  filter(period_end_date <= date_archive | is.na(date_archive))
+  filter(period_start_date <= date_archive | is.na(date_archive)) |> 
+  as_tibble()
   
 
 # I don't think this is needed anymore based on previous code
