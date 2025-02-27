@@ -809,7 +809,7 @@ eligible_no <- eligible_cows_summary |>
 
 
 
-animals_repro <- animals_repro %>% 
+animals_repro_gc4 <- animals_repro_gc3 %>% 
   arrange(id_animal_lact, period_start_date)
 
 #      *Number Pregnant Logic:*
@@ -817,7 +817,7 @@ animals_repro <- animals_repro %>%
 # need number of bred_events in repro_data that resulted in pregnancy, dynamically
 
 # Count the number of breedings that resulted in a pregnancy per period and lactation group
-pregnant_counts_by_period <- animals_repro %>%
+pregnant_counts_by_period <- animals_repro_gc4 %>%
   filter(event == "BRED" & R %in% c("P", "A", "C")) %>%  # Only include breedings that resulted in pregnancy
   mutate(lact_number = sub(".*_(\\d+)$", "\\1", id_animal_lact)) %>%  # Extract lact_number from id_animal_lact
   group_by(period_number, lact_number) %>%  # Group by period_number and lactation group
@@ -832,8 +832,8 @@ pregnant_counts_table <- pregnant_counts_by_period %>%
 eligible_cows_summary_trimmed <- eligible_cows_summary %>%
   slice(1:(n() - 2))
 
+# this is risky if col names aren't the same
 preg_risk_table <- pregnant_counts_table / eligible_cows_summary_trimmed
-
 
 preg_risk_table <- preg_risk_table %>%
   mutate(across(where(is.numeric), 
