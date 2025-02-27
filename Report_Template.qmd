@@ -31,6 +31,7 @@ library(lubridate)
 library(httr)
 library(jsonlite)
 library(gt)
+library(scales)
 
 # Initialization and organization of initial data sets
 
@@ -752,7 +753,16 @@ pregnant_counts_table <- pregnant_counts_by_period %>%
   pivot_wider(names_from = lact_number, values_from = total_pregnancies, values_fill = list(total_pregnancies = 0)) %>%  # Pivot to wide format
   mutate(Total = rowSums(across()))  # Calculate total pregnancies across lactation groups  
 
+# Preg Risk Table
+eligible_cows_summary_trimmed <- eligible_cows_summary %>%
+  slice(1:(n() - 2))
 
+preg_risk_table <- pregnant_counts_table / eligible_cows_summary_trimmed
+
+
+preg_risk_table <- preg_risk_table %>%
+  mutate(across(where(is.numeric), 
+                ~ ifelse(is.na(.), "0%", paste0(round(.*100, 1), "%"))))
 ```
 
 ```{r}
