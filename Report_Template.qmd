@@ -522,7 +522,8 @@ print(combined_plot)
 date_end <- pull_date
 
 # Create periods (21-day intervals)
-periods <- seq(date_start, date_end, by = "21 days")
+# use negative 21 to get it to start with date_end and rev to make biggest number most recent
+periods <- rev(seq(to = date_start, from = date_end, by = "-21 days"))
 
 # Ensure lact_number > 0 and only repro events that affect elig.
 repro_data <- repro_data %>%
@@ -583,7 +584,8 @@ events_filtered <- events_filtered %>%
   ) 
 
 events_filtered <- events_filtered %>%
-  filter(date_archived > date_start | is.na(date_archived))
+  filter(date_archived > date_start | is.na(date_archived)) |> 
+  filter(lact_number !=32)
 
 # Get the latest PREG and ABORT event before each period_start_date
 latest_preg_events <- events_filtered %>%
@@ -611,15 +613,17 @@ latest_events <- latest_preg_events %>%
 
 
 # Merge the latest PREG and ABORT event dates back into animals_repro
-animals_repro <- animals_repro %>%
+animals_repro_test <- animals_repro %>%
   left_join(
     latest_events %>%
-      select(id_animal_lact, period_number, latest_preg_event, latest_abort_event),  # Only keep the relevant columns
+      select(id_animal_lact, period_number, 
+             latest_preg_event, latest_abort_event,
+             date_concieved),  # Only keep the relevant columns
     by = c("id_animal_lact", "period_number")  # Match on id_animal_lact and period_number
   )
 
 # Merge data - assign events to animal and period
-animals_repro <- animals_repro %>%
+animals_repro_2 <- animals_repro_test %>%
   left_join(
     repro_data %>% 
       select(id_animal_lact, period_start_date, event, R, 
@@ -628,32 +632,44 @@ animals_repro <- animals_repro %>%
   )
 
 # Pregnancy status based on the latest events
-animals_repro <- animals_repro %>%
-  mutate(
-    pregnant_status = case_when(
-      # If the event is "PREG", set pregnant_status to 1
-      event == "PREG" ~ "1",
-      # If there is an abort event that is after the last preg event and the last        abort date is before the end of the period, she is not pregnant
-      !is.na(latest_abort_event) & latest_abort_event > latest_preg_event & latest_abort_event <= period_start_date ~ "0",
-      # If there is a fresh date and the fresh date is after the last preg event         date and the fresh date is before the period start date, she is not pregnant
-      !is.na(date_fresh) & date_fresh > latest_preg_event & date_fresh <= period_start_date ~ "0", 
-      # If there is a valid preg date and there is no abort date or the last abort         date is before the preg date and there is no fresh date or the fresh date          is before the preg date then she is pregnant
-      !is.na(latest_preg_event) & (is.na(latest_abort_event) | latest_abort_event < latest_preg_event | latest_abort_event > period_end_date) &
-        (is.na(date_fresh) | date_fresh < latest_preg_event) ~ "1",
-      # For any animals that do not meet the criteria listed above, they are listed       as not pregnant
-      TRUE ~ "0"
-    )
-  )
+# GC this is what screws things up.   The part I commented 2x out is what is setting lots of cows to 1.
+# animals_repro_3 <- animals_repro_2 %>%
+#   mutate(
+#     pregnant_status = case_when(
+#       # If the event is "PREG", set pregnant_status to 1
+#       event == "PREG" ~ "1",
+#       # If there is an abort event that is after the last preg event and the last        abort date is before the end of the period, she is not pregnant
+#       !is.na(latest_abort_event) & latest_abort_event > latest_preg_event & latest_abort_event <= period_start_date ~ "0",
+#       # If there is a fresh date and the fresh date is after the last preg event         date and the fresh date is before the period start date, she is not pregnant
+#       !is.na(date_fresh) & date_fresh > latest_preg_event & date_fresh <= period_start_date ~ "0", 
+#       # If there is a valid preg date and there is no abort date or the last abort         date is before the preg date and there is no fresh date or the fresh date          is before the preg date then she is pregnant
+#       # !is.na(latest_preg_event) & (is.na(latest_abort_event) | latest_abort_event < latest_preg_event | latest_abort_event > period_end_date) &
+#       #   (is.na(date_fresh) | date_fresh < latest_preg_event) ~ "1",
+#       # For any animals that do not meet the criteria listed above, they are listed       as not pregnant
+#       TRUE ~ "0"
+#     )
+#   )
 
-animals_repro <- animals_repro %>%
-  mutate(
-    date_vwp = as.Date(date_vwp),
-    period_start_date = as.Date(period_start_date),
-    period_end_date = as.Date(period_end_date)
-  )
+# this accomplises same as above but with no mistakes
+# but there are duplicates in things like ABORT, BRED PREG occur in same time period for example 5970
+# are cows that abort pregnant before so count as numerator for a bit or just get back tracked to open so not counted in retro calc? 
+animals_repro_gc <- animals_repro_2 |> 
+  mutate(pregnant_status = case_when(R == "P" ~ 1,
+                                      # this fills things so no need to fill and addresses duplicated events in same time window for example cow 10
+                                      date_concieved <= period_end_date ~ 1,
+                                      .default = 0))
+
+# already dates so not needed
+
+# animals_repro_4 <- animals_repro_gc %>%
+#   mutate(
+#     date_vwp = as.Date(date_vwp),
+#     period_start_date = as.Date(period_start_date),
+#     period_end_date = as.Date(period_end_date)
+#   )
 
 # VWP logic, if VWP date is < period end date than eligible at some point in period so assign 1
-animals_repro <- animals_repro %>%
+animals_repro_gc2 <- animals_repro_gc %>%
   mutate(
     vwp_status = case_when(
       is.na(date_vwp) ~ NA_real_,  # If date_vwp is NA, return NA (you can change this to any default value you want)
@@ -663,73 +679,98 @@ animals_repro <- animals_repro %>%
     )
   )
 
-animals_repro <- animals_repro %>% 
+# this tags breds and also deals with problems due to multiple events so I think afte this we can do unique to remove duplicate times
+animals_repro_gc3 <- animals_repro_gc2 %>% 
   group_by(id_animal_lact, period_end_date) %>%
   # if there is a bred event in the time period she is bred (1)
   mutate(
-    bred_status = ifelse(any(event == "BRED" & !is.na(event) & event != ""), 1, 0)
-  ) %>%
-  ungroup()
+    bred_status = ifelse(any(event == "BRED" & !is.na(event) & 
+                               event != ""), 1, 0),
+    # create dnb status for later
+    dnb_status = if_else(any(event == "DNB" & !is.na(event) &
+                               event != ""), 1,0)
+    ) %>%
+  ungroup() |> 
+  # need to make DNB status 1 after previous DNB
+  group_by(id_animal_lact) |> 
+  arrange(period_number) |> 
+  mutate(dnb_status = cummax(dnb_status)) |> 
+  ungroup() |> 
+  # get rid of duplicats in periods due to multiple events during time period
+  distinct(id_animal_lact, period_number, .keep_all = TRUE) |> 
+  # get rid of timeperiods after archive date
+  filter(period_end_date <= date_archive | is.na(date_archive))
+  
 
+# I don't think this is needed anymore based on previous code
 # carry down pregnant status 
-animals_repro <- animals_repro %>%
-  group_by(id_animal_lact) %>%  # Process per animal
-  arrange(id_animal_lact, period_start_date) %>%  # Ensure data is sorted by period
-  mutate(
-    # If there's an ABORT event, set pregnant_status to 0 immediately
-    pregnant_status = case_when(
-      event == "ABORT" ~ "0",  # Reset to 0 if there's an ABORT event
+# animals_repro <- animals_repro %>%
+#   group_by(id_animal_lact) %>%  # Process per animal
+#   arrange(id_animal_lact, period_start_date) %>%  # Ensure data is sorted by period
+#   mutate(
+#     # If there's an ABORT event, set pregnant_status to 0 immediately
+#     pregnant_status = case_when(
+#       event == "ABORT" ~ "0",  # Reset to 0 if there's an ABORT event
+# 
+#       # If pregnant_status is NA or 0 and previous row had pregnant_status == 1, carry it down
+#       (is.na(pregnant_status) | pregnant_status == "0") & lag(pregnant_status, default = "0") == "1" ~ "1",  # Carry down pregnancy status
+# 
+#       # If date_fresh happens during this period, set pregnant_status to 0
+#       !is.na(date_fresh) & date_fresh >= period_start_date & date_fresh <= period_end_date ~ "0",
+# 
+#       # Default case: keep existing pregnant_status if none of the above apply
+#       TRUE ~ as.character(pregnant_status)
+#     )
+#   ) %>%
+#   # Fill down pregnant_status for all rows in each animal group
+#   fill(pregnant_status, .direction = "down") %>%
+#   ungroup()
 
-      # If pregnant_status is NA or 0 and previous row had pregnant_status == 1, carry it down
-      (is.na(pregnant_status) | pregnant_status == "0") & lag(pregnant_status, default = "0") == "1" ~ "1",  # Carry down pregnancy status
-
-      # If date_fresh happens during this period, set pregnant_status to 0
-      !is.na(date_fresh) & date_fresh >= period_start_date & date_fresh <= period_end_date ~ "0",
-
-      # Default case: keep existing pregnant_status if none of the above apply
-      TRUE ~ as.character(pregnant_status)
-    )
-  ) %>%
-  # Fill down pregnant_status for all rows in each animal group
-  fill(pregnant_status, .direction = "down") %>%
-  ungroup()
-
+# already numeric so not needed
 
 # convert binary to numeric for later use
-animals_repro <- animals_repro %>%
-  mutate(
-    bred_status = as.numeric(bred_status),
-    pregnant_status = as.numeric(pregnant_status),  
-    vwp_status = as.numeric(vwp_status)  
-  )
+# animals_repro <- animals_repro %>%
+#   mutate(
+#     bred_status = as.numeric(bred_status),
+#     pregnant_status = as.numeric(pregnant_status),  
+#     vwp_status = as.numeric(vwp_status)  
+  # )
 
-eligible_cows <- animals_repro %>%
+
+# too many cows still
+# problems some cows dnb's before start of 1 year back so need to classify cows earlier then the time period of interest example cow 262
+
+eligible_cows <- animals_repro_gc3 %>%
   # Filter cows that are after VWP and not pregnant
-  filter(vwp_status == 1, pregnant_status == 0) %>%
-  group_by(id_animal_lact) %>%
-  arrange(id_animal_lact, period_start_date) %>%
-  mutate(
-    # Set eligibility_status based on the conditions
-    eligibility_status = case_when(
-      event == "DNB" ~ 0,  # DNB event sets eligibility_status to 0
-      !is.na(date_archive) &
-        date_archive >= period_start_date &
-        date_archive <= period_end_date + 60 ~ 0,  # Date archive within period or 60 days after end sets eligibility_status to 0
-      vwp_status == 1 & pregnant_status == 0 ~ 1,  # Both vwp_status = 1 and pregnant_status = 0 set eligibility_status to 1
-      TRUE ~ 0  # Default to 0
-    )
-  ) %>%
-  # Propagate eligibility_status = 0 for subsequent rows if eligibility_status is 0 in the previous row
-  mutate(
-    eligibility_status = if_else(
-      cumsum(eligibility_status == 0) > 0, 0, eligibility_status  # Propagate 0 forward based on cumulative sum of previous 0s
-    )
-  ) %>%
-  ungroup()
+  filter(vwp_status == 1, pregnant_status == 0 & dnb_status == 0) |> 
+  mutate(eligibility_status = 1)
+
+# # then update code below
+# %>%
+#   group_by(id_animal_lact) %>%
+#   arrange(id_animal_lact, period_start_date) %>%
+#   mutate(
+#     # Set eligibility_status based on the conditions
+#     eligibility_status = case_when(
+#       event == "DNB" ~ 0,  # DNB event sets eligibility_status to 0
+#       !is.na(date_archive) &
+#         date_archive >= period_start_date &
+#         date_archive <= period_end_date + 60 ~ 0,  # Date archive within period or 60 days after end sets eligibility_status to 0
+#       vwp_status == 1 & pregnant_status == 0 ~ 1,  # Both vwp_status = 1 and pregnant_status = 0 set eligibility_status to 1
+#       TRUE ~ 0  # Default to 0
+#     )
+#   ) %>%
+#   # Propagate eligibility_status = 0 for subsequent rows if eligibility_status is 0 in the previous row
+#   mutate(
+#     eligibility_status = if_else(
+#       cumsum(eligibility_status == 0) > 0, 0, eligibility_status  # Propagate 0 forward based on cumulative sum of previous 0s
+#     )
+#   ) %>%
+#   ungroup()
 
 
 #Create eligibility data set that only has one entry per cow per period with eligibiity status
-eligible_cows <- eligible_cows %>% 
+eligible_cows_gc <- eligible_cows %>% 
   filter(eligibility_status == 1) %>%
   select(id_animal_lact, period_number, period_start_date, period_end_date, eligibility_status) %>%
   group_by(id_animal_lact, period_number) %>%
@@ -740,7 +781,7 @@ eligible_cows <- eligible_cows %>%
   ungroup()
 
 # Create eligibility Table
-eligible_cows_summary <- eligible_cows %>%
+eligible_cows_summary <- eligible_cows_gc %>%
   filter(eligibility_status == 1) %>%
   mutate(lact_number = sub(".*_(\\d+)$", "\\1", id_animal_lact)) %>%  # Extract lact_number from id_animal_lact
   group_by(period_number, lact_number) %>%
