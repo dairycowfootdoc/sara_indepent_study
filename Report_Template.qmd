@@ -523,6 +523,10 @@ date_end <- pull_date
 
 # Create periods (21-day intervals)
 # use negative 21 to get it to start with date_end and rev to make biggest number most recent
+
+# set up new date_start so catch more DNB cows
+date_start = date_start-365
+
 periods <- rev(seq(to = date_start, from = date_end, by = "-21 days"))
 
 # Ensure lact_number > 0 and only repro events that affect elig.
@@ -781,13 +785,27 @@ eligible_cows_gc <- eligible_cows %>%
   ungroup()
 
 # Create eligibility Table
-eligible_cows_summary <- eligible_cows_gc %>%
+eligible_cows_summary <- eligible_cows %>%
   filter(eligibility_status == 1) %>%
   mutate(lact_number = sub(".*_(\\d+)$", "\\1", id_animal_lact)) %>%  # Extract lact_number from id_animal_lact
   group_by(period_number, lact_number) %>%
   summarise(total_eligible_cows = n(), .groups = "drop") %>%
   pivot_wider(names_from = lact_number, values_from = total_eligible_cows, values_fill = list(total_eligible_cows = 0)) %>%
   mutate(total = rowSums(select(., -period_number), na.rm = TRUE))  # Add total column
+
+# merge back time periods
+time_periods <- eligible_cows |> 
+  select(period_number, period_start_date) |> 
+  distinct()
+
+# to find out how compares DC
+# last 2 windows is are to high and last one is not relevant
+# other seems ok or would be if DNB's were accounted for earlier
+eligible_no <- eligible_cows_summary |> 
+  left_join(time_periods) |> 
+  select(period_start_date, everything())
+
+
 
 animals_repro <- animals_repro %>% 
   arrange(id_animal_lact, period_start_date)
