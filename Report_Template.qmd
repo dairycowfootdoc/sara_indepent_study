@@ -104,14 +104,49 @@ production_data <- production_data %>%
 Herd Demographics:
 
 ```{r}
+# Denominator files:
+denos <-read_parquet('data/intermediate_files/herd_denominators.parquet')
 
+denos_dim <-read_parquet('data/intermediate_files/herd_dim_denominators.parquet')
 
+denos_season <- read_parquet('data/intermediate_files/herd_season_denominators.parquet')
 ```
 
 ```{r}
-denos <-read_parquet('data/intermediate_files/herd_denominators.parquet') 
 
-denos
+denos_dim <- denos_dim %>% 
+  rename(dim = DIM) %>% 
+  rename(lact_group = "Lactation Group")
+
+denos_season <- denos_season %>% 
+  rename(lact_group = "Lactation Group")
+
+ggplot(denos_season, aes(x = month, y = count, color = lact_group, group = lact_group)) +
+  geom_line(size = 1) +  
+  geom_point(size = 2) +  # Optional: Add points for visibility
+  theme_minimal() +
+  labs(
+    title = "Total Counts by Month and Lactation Group",
+    x = "Month",
+    y = "Total Counts",
+    color = "Lactation Group"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Create the plot
+ggplot(denos_dim, aes(x = dim, y = count, color = lact_group, group = lact_group)) +
+  geom_line(size = 1) +  
+  geom_point(size = 2) +  # Optional: Add points for visibility
+  theme_minimal() +
+  labs(
+    title = "Total Counts by DIM and Lactation Group",
+    x = "Days in Milk (DIM)",
+    y = "Total Counts",
+    color = "Lactation Group"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
 
 ```
 
@@ -574,7 +609,6 @@ preg_risk_long <- pregnant_counts_by_period %>%
 ```{r}
 
 
-# Create lact_group +3
 preg_risk_lact_group <- preg_risk_long %>%
   mutate(
     lact_group = case_when(
@@ -593,66 +627,109 @@ preg_risk_lact_group <- preg_risk_long %>%
   replace_na(list(pregnancy_risk = 0)) 
 
 preg_risk_plot_data <- preg_risk_lact_group %>%
-  filter(lact_group == 1, period_start_date >= date_start, period_start_date <= date_end-21)
+  filter(period_start_date >= date_start-43, period_start_date <= date_end-43)
+
+range <- range(preg_risk_plot_data$period_start_date)
 
 lowest_points <- preg_risk_plot_data %>%
   filter(pregnancy_risk == min(pregnancy_risk, na.rm = TRUE))
 
-ggplot(preg_risk_plot_data, aes(x = period_start_date, y = pregnancy_risk)) +
-  geom_line(color = "blue", size = 1) +  # Line plot
-  geom_point(color = "red", size = 2) +  # Points on line
-  geom_text(data = lowest_points, aes(label = period_start_date),
-            color = "black", size = 4, vjust = -1) +  # Adding labels to lowest points
+ggplot(preg_risk_plot_data, 
+       aes(x = period_start_date, y = pregnancy_risk,
+           colour = lact_group,
+           fill = lact_group)) +
+  geom_point() +
+  geom_smooth(alpha = 0.3) +
+  geom_text(data = lowest_points, 
+            aes(label = format(period_start_date, "%b %d, %Y")),  # Show full date in labels
+            color = "red", size = 4, vjust = -1) +  
+  theme_minimal() +
   labs(
-    title = "Pregnancy Risk Over Time (Lactation 1)",
-    x = "Period Start Date",
+    title = "Pregnancy Risk Over Time",
+    x = "",
     y = "Pregnancy Risk (%)"
   ) +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as %
-  theme_minimal()
+  scale_x_date(date_breaks = "21 days",
+               date_labels = "%b %d, %Y",  # NOW SHOWS YEAR
+               limits = range) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +  
+  scale_colour_viridis_d() +
+  scale_fill_viridis_d() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(color = guide_legend(title = "Lactation Group",
+                              position = "bottom"),
+         fill = "none")
+ 
+```
+
+```{r}
+
+
+# Create a dummy dataset for the THI legend entry
+thi_legend <- data.frame(lact_group = "THI")
+
+ggplot() + 
+  # Pregnancy Risk Lines for Each Lactation Group
+  geom_line(data = preg_risk_plot_data, 
+            aes(x = period_start_date, y = pregnancy_risk * 100, 
+                color = lact_group, group = lact_group), 
+            size = 1.2) +  
+  
+  # THI Data (Using geom_line instead of geom_segment for legend inclusion)
+  geom_line(data = weather_weekly, 
+            aes(x = date_weather, y = avg_THI - 30, color = "THI"), 
+            size = 1.2) + 
+  
+  # Titles and labels
+  labs(
+    title = "Impact of THI on 21-Day Pregnancy Risk Over the Last Year",
+    subtitle = "Tracking Pregnancy Risk and Temperature-Humidity Index for Different Lactation Groups",
+    x = "Date",
+    y = "Pregnancy Risk (%)",
+    caption = "Data Source: VisualCrossing API & Herd Reproductive Data",
+    color = "Legend"  # Legend title
+  ) +
+  
+  # Define custom colors for lactation groups and THI
+  scale_color_viridis_d(
+    name = "Legend", 
+    guide = guide_legend(override.aes = list(linetype = "solid"))
+  ) +
+  scale_color_manual(values = c(viridisLite::viridis(length(unique(preg_risk_plot_data$lact_group))), "orange")) +
+  
+  # Customizing the Y-axis for pregnancy risk (0 to 50%)
+  scale_y_continuous(
+    name = "Pregnancy Risk (%)", 
+    limits = c(0, 50),
+    breaks = seq(0, 50, by = 5)
+  ) +
+  
+  # Customize the X-axis
+  scale_x_date(
+    date_labels = "%b %d %Y", 
+    date_breaks = "21 days",
+    limits = range(preg_risk_plot_data$period_start_date)
+  ) +
+  
+  # Improving readability
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),  
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text.y = element_text(size = 12),
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 14, face = "italic"),
+    plot.caption = element_text(hjust = 1, size = 10, color = "gray"),
+    legend.position = "top",  
+    panel.grid.major = element_line(color = "gray90"),  
+    panel.grid.minor = element_blank()  
+  )
 
 ```
 
 ```{r}
-preg_risk_plot_data <- preg_risk_lact_group %>%
-  filter(lact_group == 2, period_start_date >= date_start, period_start_date <= date_end-21)
 
-lowest_points <- preg_risk_plot_data %>%
-  filter(pregnancy_risk == min(pregnancy_risk, na.rm = TRUE))
-
-ggplot(preg_risk_plot_data, aes(x = period_start_date, y = pregnancy_risk)) +
-  geom_line(color = "blue", size = 1) +  # Line plot
-  geom_point(color = "red", size = 2) +  # Points on line
-  geom_text(data = lowest_points, aes(label = period_start_date),
-            color = "black", size = 4, vjust = -1) +  # Adding labels to lowest points
-  labs(
-    title = "Pregnancy Risk Over Time (Lactation 2)",
-    x = "Period Start Date",
-    y = "Pregnancy Risk (%)"
-  ) +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as %
-  theme_minimal()
-```
-
-```{r}
-preg_risk_plot_data <- preg_risk_lact_group %>%
-  filter(lact_group == "3+", period_start_date >= date_start, period_start_date <= date_end-21)
-
-lowest_points <- preg_risk_plot_data %>%
-  filter(pregnancy_risk == min(pregnancy_risk, na.rm = TRUE))
-
-ggplot(preg_risk_plot_data, aes(x = period_start_date, y = pregnancy_risk)) +
-  geom_line(color = "blue", size = 1) +  # Line plot
-  geom_point(color = "red", size = 2) +  # Points on line
-  geom_text(data = lowest_points, aes(label = period_start_date),
-            color = "black", size = 4, vjust = -1) +  # Adding labels to lowest points
-  labs(
-    title = "Pregnancy Risk Over Time (Lactation 3+)",
-    x = "Period Start Date",
-    y = "Pregnancy Risk (%)"
-  ) +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as %
-  theme_minimal()
 ```
 
 # Lameness
