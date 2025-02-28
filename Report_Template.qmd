@@ -33,6 +33,7 @@ library(jsonlite)
 library(gt)
 library(scales)
 
+
 # Initialization and organization of initial data sets
 
 source('functions/DT_base.R') #functions to parse remarks and protocols
@@ -45,6 +46,7 @@ animal_lactations<-read_parquet('data/intermediate_files/animal_lactations.parqu
 pull_date <- unique(animals$data_pull_date_max)
 
 date_start <- pull_date - 365 # pulls last year of data, modify for specific project
+date_end <- pull_date
 
 events_formatted <-read_parquet('data/intermediate_files/events_formatted.parquet')
 
@@ -74,113 +76,27 @@ youngstock_data <- events_formatted%>%
 # Save in data/intermediate_files/production_data. It should be the only file in there
 
 # Define file path
-# production_file <- "data/intermediate_files/production_data/production.parquet"
-# 
+production_file <- "data/intermediate_files/production_data/production.parquet"
+
 # # Read Parquet file
-# production_data <- read_parquet(production_file)
-# 
+production_data <- read_parquet(production_file)
+
 # # Reformat the data
-# production_data <- production_data %>%
-#   mutate(
-#     id_animal = paste0(as.character(ID), "_", as.character(BDAT)) #Create id_animal
-#   ) %>%
-#   rename(id = ID) %>%  
-#   rename(date_birth = BDAT)%>%
-#   rename(date_test = TestDate) %>%  
-#   mutate(date_test = mdy(date_test))%>% # Convert to Date (Adjust format if needed)
-#   relocate(id_animal, .before = everything())  # Move id_animal to the first column
-# 
+production_data <- production_data %>%
+  mutate(
+    id_animal = paste0(as.character(ID), "_", as.character(BDAT)) #Create id_animal
+  ) %>%
+  rename(id = ID) %>%
+  rename(date_birth = BDAT)%>%
+  rename(date_test = TestDate) %>%
+  mutate(date_test = mdy(date_test))%>% # Convert to Date (Adjust format if needed)
+  relocate(id_animal, .before = everything())  # Move id_animal to the first column
+
 
 
 ```
 
-```{r}
-#Create denominators
-
-# Define date range
-#date_start previously defined as pull_date - 365
-date_end <- pull_date
-date_start_month <- floor_date(date_start, "month") # set to first day of month for monthly calculations later
-date_end_month <- floor_date(pull_date, "month") %m+% months(1) - days(1) # set to last day of month for monthly calculations later
-
-
-filtered_animals <- animal_lactations |>
-  mutate(year_fresh = year(date_fresh)) |>  # Find freshening year
-  filter(lact_number > 0) |>  # Keep only lactating cows
-  filter(date_archive <= date_end | is.na(date_archive)) |> # Ask about this?
-  filter(date_fresh<= date_start & date_archive_max >= date_start |
-           date_fresh<= date_start & is.na(date_archive_max) |
-           date_fresh >= date_start & date_archive_max <= date_end|
-           date_fresh >= date_start & is.na(date_archive_max))
-
-# Summarize total active cows (unique count per year)
-total_cows <- filtered_animals |> 
-  group_by(year_fresh, id_animal) |> 
-  slice_tail() |>  # Ensure unique count per cow
-  ungroup() |> 
-  group_by(year_fresh) |> 
-  summarise(cows_total = n()) |>  # Get total cows
-  mutate(lact_group = "Total")
-
-# Summarize by lactation group (lact_number)
-summary_lact <- filtered_animals |> 
-  group_by(year_fresh, lact_number) |> 
-  summarize(count_animals = n_distinct(id_animal)) |>  # Count cows in each lactation group
-  ungroup() |> 
-  mutate(lact_number = ifelse(is.na(lact_number), "Total", lact_number))  # Replace NA with "Total"
-
-# Combine both summary datasets
-summary_lact_final <- bind_rows(total_cows, summary_lact) |> 
-  group_by(lact_number) |> 
-  summarise(
-    total_animals_by_lact = sum(count_animals, na.rm = TRUE))|> 
-  ungroup()
-
-#                             Monthly Calculations:
-# Generate a list of all months in the date range
-months_list <- seq(date_start_month, date_end_month, by = "month") |> format("%Y-%m")
-
-# Define a function to calculate monthly active cows by lactation group
-count_active_by_month <- function(month, filtered_animals) {
-  # Define the start and end date for this month
-  month_start <- ymd(paste0(month, "-01"))
-  month_end <- ceiling_date(month_start, "month") - days(1)
-  
-  # Filter animals that were active in this month
-  active_animals <- filtered_animals |> 
-    filter(
-      # Check if the cow was active in this month
-      (date_fresh<= month_start & date_archive_max >= month_start |
-           date_fresh<= month_start & is.na(date_archive_max) |
-           date_fresh >= month_start & date_archive_max <= month_end|
-           date_fresh >= month_start & is.na(date_archive_max)))
-    
-  # Count the cows in each lactation group for this month
-  active_counts <- active_animals |> 
-    group_by(lact_number) |> 
-    summarise(cows_active = n(), .groups = "drop") |> 
-    spread(key = lact_number, value = cows_active, fill = 0)
-  
-  # Add the month column
-  active_counts$month <- month
-  
-  # Add total_monthly column by summing across the row (excluding the 'month' column)
-  active_counts <- active_counts |> 
-    mutate(total_monthly = rowSums(active_counts[, -which(names(active_counts) == "month")], na.rm = TRUE))
-  
-  return(active_counts)
-}
-
-# Apply the function to each month in the date range
-monthly_data <- purrr::map_dfr(months_list, count_active_by_month, filtered_animals = filtered_animals)
-
-# Reformat the month to the desired format
-monthly_data <- monthly_data |> 
-  mutate(month = format(ymd(paste0(month, "-01")), "%b-%y")) |>  # Reformat the month column
-
-  # Ensure month is the first column
-  select(month, everything())
-
+```         
 ```
 
 # Herd Summary
@@ -188,110 +104,18 @@ monthly_data <- monthly_data |>
 Herd Demographics:
 
 ```{r}
-# Create the table from monthly_data
-monthly_table <- monthly_data |> 
-  gt() |> 
-  tab_header(
-    title = "Monthly Active Cows by Lactation Group",
-    subtitle = "Number of active cows per lactation group each month"
-  ) |> 
-  cols_label(
-    month = "Month",  # Clean up the month column label
-    total_monthly = "Total"
-  ) |> 
-  fmt_number(
-    columns = starts_with("lact_number"),  # Format numbers in lactation group columns
-    decimals = 0
-  ) |> 
-  tab_spanner(
-    label = "Lactation Groups",
-    columns = starts_with("lact_number")  # Spanner for lactation group columns
-  ) |> 
-  tab_style(
-    style = cell_text(weight = "bold", size = "large"),  # Bold and larger text for headers
-    locations = cells_column_labels()
-  ) |> 
-  tab_style(
-    style = cell_text(weight = "bold"),  # Bold the 'month' column for emphasis
-    locations = cells_column_labels(columns = vars(month))
-  ) |> 
-  tab_style(
-    style = cell_fill(color = "lightgray"),  # Light gray background for the headers
-    locations = cells_column_labels()
-  ) |> 
-  tab_style(
-    style = cell_fill(color = "#f7f7f7"),  # Light fill for every alternate row for better readability
-    locations = cells_body(rows = seq(1, nrow(monthly_data), by = 2))
-  ) |> 
-  tab_style(
-    style = cell_text(align = "right"),  # Right-align the numbers in the lactation group columns
-    locations = cells_body(columns = starts_with("lact_number"))
-  ) |> 
-  tab_style(
-    style = cell_text(align = "center"),  # Center-align the 'month' column
-    locations = cells_body(columns = vars(month))
-  ) |> 
-  tab_options(
-    table.border.top.width = px(2),  # Border above the table
-    table.border.bottom.width = px(2),  # Border below the table
-    table.font.size = 12  # Font size for table
-  )
 
-# Print the table
-monthly_table
 
 ```
 
 ```{r}
+denos <-read_parquet('data/intermediate_files/herd_denominators.parquet') 
 
-# Remove the total_monthly column
-monthly_data_cleaned <- monthly_data |> 
-  select(-total_monthly)
-
-# Create a separate dataset for 'total_monthly' for plotting
-total_monthly_data <- monthly_data |> 
-  select(month, total_monthly) |> 
-  pivot_longer(cols = total_monthly, names_to = "lactation", values_to = "cows_active") |> 
-  mutate(lactation = "Total")  # Label this as 'Total' for the plot
-
-# Now proceed with pivoting and transforming the rest of the data
-monthly_data_long <- monthly_data_cleaned |> 
-  pivot_longer(cols = -c(month), names_to = "lactation", values_to = "cows_active") |> 
-  mutate(
-    lactation = ifelse(lactation %in% c("1", "2"), lactation, "3+")  # Condense lactation 3+ into "3+"
-  ) |> 
-  group_by(month, lactation) |>  # Group by month and lactation
-  summarise(cows_active = sum(cows_active), .groups = "drop")  # Aggregate by month and lactation
-
-# Combine the 'monthly_data_long' and 'total_monthly_data'
-combined_data <- bind_rows(monthly_data_long, total_monthly_data)
-
-# Convert Month to date format for plot
-combined_data <- combined_data |> 
-  mutate(month = as.Date(parse_date_time(month, orders = "my")))  
-
-ggplot(combined_data, aes(x = month, y = cows_active, color = lactation, group = lactation)) +
-  geom_line(size = 1.2) +  
-  geom_point(size = 4, shape = 21, fill = "white", stroke = 1.5) +  
-  labs(
-    title = "Monthly Lactating Herd by Lactation Number and Total",
-    x = "Month",
-    y = "Number of Active Cows",
-    color = "Lactation Group"
-  ) +
-  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month") +  # Ensure correct order
-  theme_minimal() +  
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),  
-    plot.title = element_text(size = 16, face = "bold"),  
-    axis.title = element_text(size = 14),  
-    legend.title = element_text(size = 12),  
-    legend.text = element_text(size = 10),  
-    panel.grid.major = element_line(color = "gray90", size = 0.5),  
-    panel.grid.minor = element_blank()  
-  )
+denos
 
 ```
+
+# Production
 
 ```{r}
 # Milk production by month overtime:
@@ -348,6 +172,8 @@ ggplot(monthly_data, aes(x = month, y = avg_milk)) +
         axis.title = element_text(size = 14))  # Axis titles size
 
 ```
+
+# Production and THI
 
 ```{r}
 # Plot THI over Weekly Milk prodcution
@@ -515,7 +341,7 @@ print(combined_plot)
 
 ```
 
-# Reproduction - TBD
+# Reproduction
 
 ```{r}
 # 21 Day Preg Risk
@@ -525,9 +351,9 @@ date_end <- pull_date
 # use negative 21 to get it to start with date_end and rev to make biggest number most recent
 
 # set up new date_start so catch more DNB cows
-date_start = date_start-365
+date_start_repro = date_start-365
 
-periods <- rev(seq(to = date_start, from = date_end, by = "-21 days"))
+periods <- rev(seq(to = date_start_repro, from = date_end, by = "-21 days"))
 
 # Ensure lact_number > 0 and only repro events that affect elig.
 repro_data <- repro_data %>%
@@ -549,7 +375,7 @@ repro_data <- repro_data %>%
 animals_repro <- animal_lactations %>% 
   filter(lact_number > 0) %>%
   filter(lact_number != 32) |> 
-  filter(date_archive >= date_start | is.na(date_archive)) %>% 
+  filter(date_archive >= date_start_repro | is.na(date_archive)) %>% 
   select(id_animal_lact, date_fresh, date_archive) 
 
 # Create row for every animal in every period
@@ -635,42 +461,13 @@ animals_repro_2 <- animals_repro_test %>%
     by = c("id_animal_lact", "period_start_date", "period_end_date", "period_number")
   )
 
-# Pregnancy status based on the latest events
-# GC this is what screws things up.   The part I commented 2x out is what is setting lots of cows to 1.
-# animals_repro_3 <- animals_repro_2 %>%
-#   mutate(
-#     pregnant_status = case_when(
-#       # If the event is "PREG", set pregnant_status to 1
-#       event == "PREG" ~ "1",
-#       # If there is an abort event that is after the last preg event and the last        abort date is before the end of the period, she is not pregnant
-#       !is.na(latest_abort_event) & latest_abort_event > latest_preg_event & latest_abort_event <= period_start_date ~ "0",
-#       # If there is a fresh date and the fresh date is after the last preg event         date and the fresh date is before the period start date, she is not pregnant
-#       !is.na(date_fresh) & date_fresh > latest_preg_event & date_fresh <= period_start_date ~ "0", 
-#       # If there is a valid preg date and there is no abort date or the last abort         date is before the preg date and there is no fresh date or the fresh date          is before the preg date then she is pregnant
-#       # !is.na(latest_preg_event) & (is.na(latest_abort_event) | latest_abort_event < latest_preg_event | latest_abort_event > period_end_date) &
-#       #   (is.na(date_fresh) | date_fresh < latest_preg_event) ~ "1",
-#       # For any animals that do not meet the criteria listed above, they are listed       as not pregnant
-#       TRUE ~ "0"
-#     )
-#   )
-
-# this accomplises same as above but with no mistakes
-# but there are duplicates in things like ABORT, BRED PREG occur in same time period for example 5970
+# There are duplicates in things like ABORT, BRED PREG occur in same time period for example 5970
 # are cows that abort pregnant before so count as numerator for a bit or just get back tracked to open so not counted in retro calc? 
 animals_repro_gc <- animals_repro_2 |> 
   mutate(pregnant_status = case_when(R == "P" ~ 1,
                                       # this fills things so no need to fill and addresses duplicated events in same time window for example cow 10
                                       date_concieved <= period_end_date ~ 1,
                                       .default = 0))
-
-# already dates so not needed
-
-# animals_repro_4 <- animals_repro_gc %>%
-#   mutate(
-#     date_vwp = as.Date(date_vwp),
-#     period_start_date = as.Date(period_start_date),
-#     period_end_date = as.Date(period_end_date)
-#   )
 
 # VWP logic, if VWP date is < period end date than eligible at some point in period so assign 1
 animals_repro_gc2 <- animals_repro_gc %>%
@@ -706,42 +503,6 @@ animals_repro_gc3 <- animals_repro_gc2 %>%
   # get rid of timeperiods after archive date
   filter(period_start_date <= date_archive | is.na(date_archive)) |> 
   as_tibble()
-  
-
-# I don't think this is needed anymore based on previous code
-# carry down pregnant status 
-# animals_repro <- animals_repro %>%
-#   group_by(id_animal_lact) %>%  # Process per animal
-#   arrange(id_animal_lact, period_start_date) %>%  # Ensure data is sorted by period
-#   mutate(
-#     # If there's an ABORT event, set pregnant_status to 0 immediately
-#     pregnant_status = case_when(
-#       event == "ABORT" ~ "0",  # Reset to 0 if there's an ABORT event
-# 
-#       # If pregnant_status is NA or 0 and previous row had pregnant_status == 1, carry it down
-#       (is.na(pregnant_status) | pregnant_status == "0") & lag(pregnant_status, default = "0") == "1" ~ "1",  # Carry down pregnancy status
-# 
-#       # If date_fresh happens during this period, set pregnant_status to 0
-#       !is.na(date_fresh) & date_fresh >= period_start_date & date_fresh <= period_end_date ~ "0",
-# 
-#       # Default case: keep existing pregnant_status if none of the above apply
-#       TRUE ~ as.character(pregnant_status)
-#     )
-#   ) %>%
-#   # Fill down pregnant_status for all rows in each animal group
-#   fill(pregnant_status, .direction = "down") %>%
-#   ungroup()
-
-# already numeric so not needed
-
-# convert binary to numeric for later use
-# animals_repro <- animals_repro %>%
-#   mutate(
-#     bred_status = as.numeric(bred_status),
-#     pregnant_status = as.numeric(pregnant_status),  
-#     vwp_status = as.numeric(vwp_status)  
-  # )
-
 
 # too many cows still
 # problems some cows dnb's before start of 1 year back so need to classify cows earlier then the time period of interest example cow 262
@@ -786,6 +547,11 @@ eligible_cows_gc <- eligible_cows %>%
   distinct(id_animal_lact, period_number, .keep_all = TRUE) %>%
   ungroup()
 
+eligibility_long <- eligible_cows_gc %>% 
+  mutate(lact_number = sub(".*_(\\d+)$", "\\1", id_animal_lact)) %>%  # Extract lact_number from id_animal_lact
+  group_by(period_number, lact_number) %>%  # Group by period_number and lactation group
+  summarise(total_eligible = n(), .groups = "drop")  # Count pregnancies per period and lactation group
+
 # Create eligibility Table
 eligible_cows_summary <- eligible_cows %>%
   filter(eligibility_status == 1) %>%
@@ -807,8 +573,6 @@ eligible_no <- eligible_cows_summary |>
   left_join(time_periods) |> 
   select(period_start_date, everything())
 
-
-
 animals_repro_gc4 <- animals_repro_gc3 %>% 
   arrange(id_animal_lact, period_start_date)
 
@@ -823,36 +587,99 @@ pregnant_counts_by_period <- animals_repro_gc4 %>%
   group_by(period_number, lact_number) %>%  # Group by period_number and lactation group
   summarise(total_pregnancies = n(), .groups = "drop")  # Count pregnancies per period and lactation group
 
-# Pivot the table to get lactation number as columns and total pregnancies as values
-pregnant_counts_table <- pregnant_counts_by_period %>%
-  pivot_wider(names_from = lact_number, values_from = total_pregnancies, values_fill = list(total_pregnancies = 0)) %>%  # Pivot to wide format
-  mutate(Total = rowSums(across()))  # Calculate total pregnancies across lactation groups  
 
-# Preg Risk Table
-eligible_cows_summary_trimmed <- eligible_cows_summary %>%
-  slice(1:(n() - 2))
+preg_risk_long <- pregnant_counts_by_period %>%
+  inner_join(eligibility_long, by = c("period_number", "lact_number")) %>%
+  mutate(pregnancy_risk = total_pregnancies / total_eligible) %>%
+  replace_na(list(pregnancy_risk = 0))  # Ensure no NAs
 
-# this is risky if col names aren't the same
-preg_risk_table <- pregnant_counts_table / eligible_cows_summary_trimmed
-
-preg_risk_table <- preg_risk_table %>%
-  mutate(across(where(is.numeric), 
-                ~ ifelse(is.na(.), "0%", paste0(round(.*100, 1), "%"))))
 ```
+
+# Reproduction and THI
 
 ```{r}
-# conception rate over time
+
+# preg_risk_plot_data <- preg_risk_long %>%
+#   filter(lact_number == 1, period_start_date >= date_start, period_start_date <= date_end)
+# 
+# lowest_points <- preg_risk_plot_data %>%
+#   filter(pregnancy_risk == min(pregnancy_risk, na.rm = TRUE))
+# 
+# preg_risk_plot <- ggplot(preg_risk_plot_data, aes(x = period_start_date, y = pregnancy_risk)) +
+#   geom_line(color = "blue", size = 1) +  # Line plot
+#   geom_point(color = "red", size = 2) +  # Points on line
+#   geom_text(data = lowest_points, aes(label = period_start_date), 
+#             color = "black", size = 4, vjust = -1) +  # Adding labels to lowest points
+#   labs(
+#     title = "Pregnancy Risk Over Time (Lactation 1)",
+#     x = "Period Start Date",
+#     y = "Pregnancy Risk (%)"
+#   ) +
+#   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as %
+#   theme_minimal()
+# 
+# # Create a separate plot for the THI data
+# thi_plot <- ggplot() + 
+#   # Plot the THI data with color-changing line segments
+#   geom_segment(data = weather_weekly, 
+#                aes(x = date_weather, y = avg_THI, xend = next_date, yend = next_THI, color = next_THI_color), 
+#                size = 1.2) +  # Slightly thicker line for better visibility
+#   
+#   # Add titles and labels
+#   labs(
+#     title = "Thermal Heat Index (THI) Over Time",
+#     subtitle = "Weekly Thermal Heat Index and Color-coded Segments",
+#     x = "Date",
+#     y = "THI",
+#     caption = "Data Source: VisualCrossing API"
+#   ) +
+#   
+#   # Enhance the color scale for THI levels
+#   scale_color_manual(values = c("green", "yellow", "orange", "red"),
+#                      breaks = c("green", "yellow", "orange", "red"),
+#                      labels = c("Low THI (< 50)", "Moderate THI (50-60)", "High THI (60-70)", "Very High THI (> 70)")) +
+#   
+#   # Modify gridlines and background for clarity
+#   theme_minimal(base_size = 14) +  # Increase base size for readability
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1, size = 12),  # Rotate x-axis labels for readability
+#     axis.title.x = element_text(size = 14),
+#     axis.title.y = element_text(size = 14),
+#     axis.text.y = element_text(size = 12),
+#     plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+#     plot.subtitle = element_text(hjust = 0.5, size = 12, face = "italic"),
+#     plot.caption = element_text(hjust = 1, size = 10, color = "gray"),
+#     legend.title = element_text(size = 12),
+#     legend.text = element_text(size = 11)
+#   ) +
+#   
+#   # Set the y-axis for THI values
+#   scale_y_continuous(
+#     name = "THI"
+#   ) +  # No secondary axis needed for just THI
+#   
+#   theme(
+#     legend.position = "top"  # Position the legend at the top
+#   )
+# 
+# combined_plot <- preg_risk_plot + thi_plot + plot_layout(ncol = 1)  # Stack plots vertically, or use nrow = 1 for horizontal
+# 
+# # Display the combined plot
+# print(combined_plot)
 ```
 
-# Lameness
+# Lameness 
 
 ```{r}
 # Lameness events by DIM
 
-graph <- ggplot(lame_data, aes(x = dim_event)) +
+lame_data <- lame_data %>% 
+  filter(is.na(date_archived)|date_archived > date_start) %>% 
+  filter(dim_event >=0)
+
+ggplot(lame_data, aes(x = dim_event)) +
   geom_histogram(binwidth = 10, fill = "steelblue", color = "black", alpha = 0.7) +
   theme_minimal(base_size = 14) +
-  facet_wrap(vars(event), ncol = 1, scales = "free") +
   labs(
     title = "Distribution of Lameness Events Over Days in Milk",
     x = "Days in Milk",
@@ -864,8 +691,9 @@ graph <- ggplot(lame_data, aes(x = dim_event)) +
     strip.text = element_text(size = 14, face = "bold")
   )
 
-print(graph)
 ```
+
+Lameness by type
 
 ```{r}
 #| fig-height: 8
@@ -903,11 +731,10 @@ summarize_lame_events <- summarize_lame_events %>%
   )
 ```
 
+Lameness by type and DIM
+
 ```{r}
 # Lameness events by DIM and event type
-library(dplyr)
-library(ggplot2)
-library(viridis)
 
 # Summarize data
 summarized_lame_events <- lame_data |> 
@@ -933,7 +760,7 @@ summarized_lame_events <- summarized_lame_events |>
 ggplot(summarized_lame_events, aes(x = dim_event, y = count_rows, fill = event_type)) +
   geom_col(width = 14, position = "stack") +  # Use geom_col for numeric x-axis
   scale_fill_viridis_d() +  # Colorblind-friendly palette
-  scale_x_continuous(breaks = seq(0, max(summarized_lame_events$dim_event), by = 60)) +  # Tick marks every 30 days
+  scale_x_continuous(breaks = seq(0, max(summarized_lame_events$dim_event), by = 90)) +  # Tick marks every 30 days
   theme_minimal(base_size = 14) +
   facet_wrap(vars(event), ncol = 1, scales = "free_y") +  # Separate facets for each event
   labs(
@@ -955,8 +782,6 @@ ggplot(summarized_lame_events, aes(x = dim_event, y = count_rows, fill = event_t
 # Mastitis
 
 ```{r}
-
-
 
 graph <- ggplot(mastitis_data, aes(x = dim_event)) +
   geom_histogram(binwidth = 10, fill = "steelblue", color = "black", alpha = 0.7) +
