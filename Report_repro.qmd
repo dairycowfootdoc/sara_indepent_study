@@ -33,6 +33,7 @@ library(jsonlite)
 library(gt)
 library(scales)
 
+
 # Initialization and organization of initial data sets
 
 source('functions/DT_base.R') #functions to parse remarks and protocols
@@ -45,6 +46,7 @@ animal_lactations<-read_parquet('data/intermediate_files/animal_lactations.parqu
 pull_date <- unique(animals$data_pull_date_max)
 
 date_start <- pull_date - 365 # pulls last year of data, modify for specific project
+date_end <- pull_date
 
 events_formatted <-read_parquet('data/intermediate_files/events_formatted.parquet')
 
@@ -61,9 +63,7 @@ lame_data <- events_formatted %>%
 # Reroduction
 repro_data <- events_formatted %>%
   filter(event_type %in% c("repro"))%>%
-  select(id_animal, id_animal_lact, 
-         date_birth, lact_number, event, date_event,
-         dim_event, R, date_concieved)
+  select(id_animal, id_animal_lact, date_birth, lact_number, event, date_event, dim_event, R)
 
 vwp <- 50 # Set to herd's VWP
 
@@ -76,52 +76,51 @@ youngstock_data <- events_formatted%>%
 # Save in data/intermediate_files/production_data. It should be the only file in there
 
 # Define file path
-# production_file <- "data/intermediate_files/production_data/production.parquet"
-# 
+production_file <- "data/intermediate_files/production_data/production.parquet"
+
 # # Read Parquet file
 # production_data <- read_parquet(production_file)
 # 
-# # Reformat the data
+# # # Reformat the data
 # production_data <- production_data %>%
 #   mutate(
 #     id_animal = paste0(as.character(ID), "_", as.character(BDAT)) #Create id_animal
 #   ) %>%
-#   rename(id = ID) %>%  
+#   rename(id = ID) %>%
 #   rename(date_birth = BDAT)%>%
-#   rename(date_test = TestDate) %>%  
+#   rename(date_test = TestDate) %>%
 #   mutate(date_test = mdy(date_test))%>% # Convert to Date (Adjust format if needed)
 #   relocate(id_animal, .before = everything())  # Move id_animal to the first column
-# 
+
 
 
 ```
 
 
-# Reproduction - TBD
+
+# Reproduction
 
 ```{r}
 # 21 Day Preg Risk
 date_end <- pull_date
 
-# Create periods (21-day intervals)
-periods <- seq(date_start, date_end, by = "21 days")
+# Create periods (21-day intervals) - use negative 21 to get it to start with date_end and rev to make biggest number most recent
+
+# set up new date_start so catch more DNB cows
+date_start_repro = date_start-365
+
+periods <- rev(seq(to = date_start_repro, from = date_end, by = "-21 days"))
 
 # Ensure lact_number > 0 and only repro events that affect elig.
 repro_data <- repro_data %>%
-  filter(lact_number > 0, event %in% c("PREG", 
-                                       "ABORT", "BRED", 
-                                       "OK", "OPEN", "DNB")
-         ) |> 
-  filter(lact_number != 32) |> 
-  #filter out already pregnant cows (ie date_concieved has to be > date_start)
-  filter(date_concieved > date_start | is.na(date_concieved))
+  filter(lact_number > 0, event %in% c("PREG", "ABORT", "BRED", "OK", "OPEN", "DNB"))
 
 # Assign time periods to repro data
 repro_data <- repro_data %>%
   mutate(
     period_number = findInterval(date_event, periods, rightmost.closed = TRUE),
-    period_start_date = periods[pmax(period_number, 1)],  # Assign start date
-    period_end_date = period_start_date + 20,  # 21-day period
+    period_start_date = periods[pmax(period_number, 1)], 
+    period_end_date = period_start_date + 20,  
     period_end_date = case_when(
       period_end_date > date_end ~ date_end,  # Reset if > date_end
       TRUE ~ period_end_date  # Otherwise, keep the calculated end date
@@ -132,7 +131,7 @@ repro_data <- repro_data %>%
 animals_repro <- animal_lactations %>% 
   filter(lact_number > 0) %>%
   filter(lact_number != 32) |> 
-  filter(date_archive >= date_start | is.na(date_archive)) %>% 
+  filter(date_archive >= date_start_repro | is.na(date_archive)) %>% 
   select(id_animal_lact, date_fresh, date_archive) 
 
 # Create row for every animal in every period
@@ -148,7 +147,6 @@ all_periods <- animals_repro %>%
 # Merge with existing animal_repro data
 animals_repro <- all_periods %>%
   left_join(animals_repro, by = c("id_animal_lact")) %>%
-  filter(is.na(date_archive) | date_archive > period_start_date) |> 
   group_by(id_animal_lact) %>%
   fill(date_fresh, date_archive, .direction = "downup") %>%  # Ensure lact info is copied
   ungroup()
@@ -160,80 +158,73 @@ animals_repro <- animals_repro %>%
 
 # set up event data 
 events_filtered <- events_formatted %>%
-  filter(event %in% c("PREG", "ABORT")) |> 
-  filter(lact_number != 32) |> 
-  filter(date_concieved >= date_start)
+  filter(event %in% c("PREG", "ABORT"))
 
 # Set up event data with period information (matching the structure of animals_repro)
-events_filtered_test <- events_filtered %>%
-  # Ensure the correct period info is in the events data by matching on period numbers
+events_filtered <- events_filtered %>%
   left_join(
     animals_repro %>%
       select(id_animal_lact, period_number, period_start_date, period_end_date),
-    )
-  
+    by = c("id_animal_lact")
+  ) 
+
+events_filtered <- events_filtered %>%
+  filter(date_archived > date_start_repro | is.na(date_archived)) |> 
+  filter(lact_number !=32)
 
 # Get the latest PREG and ABORT event before each period_start_date
-latest_events <- events_filtered_test %>%
-  # Keep only events that happened before the period_start_date (in the same period)
-  filter(date_event < period_end_date) %>%
-  group_by(id_animal_lact, period_number, period_start_date, period_end_date) %>%
-  summarise(
-    # Get the latest PREG event before the period_end_date
-    latest_preg_event = max(if_else(event == "PREG", date_event, as.Date(0)), na.rm = TRUE),
-    # Get the latest ABORT event before the period_end_date
-    latest_abort_event = max(if_else(event == "ABORT", date_event, as.Date(0)), na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    latest_preg_event = as.Date(latest_preg_event),
-    latest_preg_event = if_else(latest_preg_event == "1970-01-01", NA,latest_preg_event),
-    latest_abort_event = as.Date(latest_abort_event),
-     latest_abort_event = if_else(latest_abort_event == "1970-01-01", NA,latest_abort_event)
-    )|> 
+latest_preg_events <- events_filtered %>%
+  filter(event == "PREG") %>% 
+  group_by(id_animal_lact, period_start_date) %>%
+  slice_max(date_event, n = 1) %>%  
+  rename(latest_preg_event = date_event) %>%  
   ungroup()
 
-# Merge the latest PREG and ABORT event dates back into animals_repro
-animals_repro <- animals_repro %>%
-  left_join(latest_events, by = c("id_animal_lact", "period_number", "period_start_date", "period_end_date"))
+# Get the most recent ABORT event for each animal in each period
+latest_abort_events <- events_filtered %>%
+  filter(event == "ABORT") %>%  
+  group_by(id_animal_lact, period_start_date) %>%
+  slice_max(date_event, n = 1) %>%  
+  rename(latest_abort_event = date_event) %>%  
+  ungroup()
 
+latest_events <- latest_preg_events %>%
+  left_join(
+    latest_abort_events %>% select(id_animal_lact, period_start_date, latest_abort_event),  # Only keep relevant columns from latest_abort_events
+    by = c("id_animal_lact", "period_start_date")
+  )
+
+# Merge the latest PREG and ABORT event dates back into animals_repro
+animals_repro_test <- animals_repro %>%
+  left_join(
+    latest_events %>%
+      select(id_animal_lact, period_number, 
+             latest_preg_event, latest_abort_event,
+             date_concieved),  
+    by = c("id_animal_lact", "period_number")  # Match on id_animal_lact and period_number
+  )
 
 # Merge data - assign events to animal and period
-animals_repro <- animals_repro %>%
+animals_repro_2 <- animals_repro_test %>%
   left_join(
     repro_data %>% 
       select(id_animal_lact, period_start_date, event, R, 
-             period_number, period_end_date, date_concieved), 
+             period_number, period_end_date), 
     by = c("id_animal_lact", "period_start_date", "period_end_date", "period_number")
   )
 
-# Pregnancy status based on the latest events
-animals_repro <- animals_repro %>%
-  mutate(
-    pregnant_status = case_when(
-      # If the event is "PREG", set pregnant_status to 1
-      event == "PREG" ~ "1",
-      # If there is an abort event that is after the last preg event and the last        abort date is before the end of the period, she is not pregnant
-      !is.na(latest_abort_event) & latest_abort_event > latest_preg_event & latest_abort_event <= period_start_date ~ "0",
-      # If there is a fresh date and the fresh date is after the last preg event         date and the fresh date is before the period start date, she is not pregnant
-      !is.na(date_fresh) & date_fresh > latest_preg_event & date_fresh <= period_start_date ~ "0", 
-      # If there is a valid preg date and there is no abort date or the last abort         date is before the preg date and there is no fresh date or the fresh date          is before the preg date then she is pregnant
-      !is.na(latest_preg_event) & (is.na(latest_abort_event) | latest_abort_event < latest_preg_event | latest_abort_event > period_end_date) &
-        (is.na(date_fresh) | date_fresh < latest_preg_event) ~ "1",
-      # For any animals that do not meet the criteria listed above, they are listed       as not pregnant
-      TRUE ~ "0"
-    )
-  )
 
-animals_repro <- animals_repro %>%
-  mutate(
-    date_vwp = as.Date(date_vwp),
-    period_start_date = as.Date(period_start_date),
-    period_end_date = as.Date(period_end_date)
-  )
+# If results column is P asign 1, if date_conceived is before period_end_date, asign P
+# Are cows that abort pregnant before so count as numerator for a bit or just get back tracked to open so not counted in retro calc? (5970)
+animals_repro_gc <- animals_repro_2 |> 
+  mutate(pregnant_status = case_when(R == "P" ~ 1,
+                                      # this fills things so no need to fill and addresses duplicated events in same time window for example cow 10
+                                      date_concieved <= period_end_date ~ 1,
+                                      .default = 0))
+
 
 # VWP logic, if VWP date is < period end date than eligible at some point in period so assign 1
-animals_repro <- animals_repro %>%
+animals_repro_gc2 <- animals_repro_gc %>%
   mutate(
     vwp_status = case_when(
       is.na(date_vwp) ~ NA_real_,  # If date_vwp is NA, return NA (you can change this to any default value you want)
@@ -243,73 +234,42 @@ animals_repro <- animals_repro %>%
     )
   )
 
-animals_repro <- animals_repro %>% 
+# If Bred in period bred_status = 1, if DNB event in period dnb_status = 1. Carry down dnb_status for future periods. Only one row per cow per period. Get rid of cows archived before the start of the period.
+animals_repro_gc3 <- animals_repro_gc2 %>% 
+  lazy_dt() |> 
   group_by(id_animal_lact, period_end_date) %>%
   # if there is a bred event in the time period she is bred (1)
   mutate(
-    bred_status = ifelse(any(event == "BRED" & !is.na(event) & event != ""), 1, 0)
-  ) %>%
-  ungroup()
+    bred_status = ifelse(any(event == "BRED" & !is.na(event) & 
+                               event != ""), 1, 0),
+    # create dnb status for later
+    dnb_status = if_else(any(event == "DNB" & !is.na(event) &
+                               event != ""), 1,0)
+    ) %>%
+  ungroup() |> 
+  # need to make DNB status 1 after previous DNB
+  group_by(id_animal_lact) |> 
+  arrange(period_number) |> 
+  mutate(dnb_status = cummax(dnb_status)) |> 
+  ungroup() |> 
+  # get rid of duplicats in periods due to multiple events during time period
+  distinct(id_animal_lact, period_number, .keep_all = TRUE) |> 
+  # get rid of timeperiods after archive date
+  filter(period_start_date <= date_archive | is.na(date_archive)) |> 
+  as_tibble()
+  
 
-# carry down pregnant status 
-animals_repro <- animals_repro %>%
-  group_by(id_animal_lact) %>%  # Process per animal
-  arrange(id_animal_lact, period_start_date) %>%  # Ensure data is sorted by period
-  mutate(
-    # If there's an ABORT event, set pregnant_status to 0 immediately
-    pregnant_status = case_when(
-      event == "ABORT" ~ "0",  # Reset to 0 if there's an ABORT event
+# too many cows still
+# problems some cows dnb's before start of 1 year back so need to classify cows earlier then the time period of interest example cow 262
 
-      # If pregnant_status is NA or 0 and previous row had pregnant_status == 1, carry it down
-      (is.na(pregnant_status) | pregnant_status == "0") & lag(pregnant_status, default = "0") == "1" ~ "1",  # Carry down pregnancy status
-
-      # If date_fresh happens during this period, set pregnant_status to 0
-      !is.na(date_fresh) & date_fresh >= period_start_date & date_fresh <= period_end_date ~ "0",
-
-      # Default case: keep existing pregnant_status if none of the above apply
-      TRUE ~ as.character(pregnant_status)
-    )
-  ) %>%
-  # Fill down pregnant_status for all rows in each animal group
-  fill(pregnant_status, .direction = "down") %>%
-  ungroup()
-
-
-# convert binary to numeric for later use
-animals_repro <- animals_repro %>%
-  mutate(
-    bred_status = as.numeric(bred_status),
-    pregnant_status = as.numeric(pregnant_status),  
-    vwp_status = as.numeric(vwp_status)  
-  )
-
-eligible_cows <- animals_repro %>%
+eligible_cows <- animals_repro_gc3 %>%
   # Filter cows that are after VWP and not pregnant
-  filter(vwp_status == 1, pregnant_status == 0) %>%
-  group_by(id_animal_lact) %>%
-  arrange(id_animal_lact, period_start_date) %>%
-  mutate(
-    # Set eligibility_status based on the conditions
-    eligibility_status = case_when(
-      event == "DNB" ~ 0,  # DNB event sets eligibility_status to 0
-      !is.na(date_archive) &
-        date_archive >= period_start_date &
-        date_archive <= period_end_date + 60 ~ 0,  # Date archive within period or 60 days after end sets eligibility_status to 0
-      vwp_status == 1 & pregnant_status == 0 ~ 1,  # Both vwp_status = 1 and pregnant_status = 0 set eligibility_status to 1
-      TRUE ~ 0  # Default to 0
-    )
-  ) %>%
-  # Propagate eligibility_status = 0 for subsequent rows if eligibility_status is 0 in the previous row
-  mutate(
-    eligibility_status = if_else(
-      cumsum(eligibility_status == 0) > 0, 0, eligibility_status  # Propagate 0 forward based on cumulative sum of previous 0s
-    )
-  ) %>%
-  ungroup()
+  filter(vwp_status == 1, pregnant_status == 0 & dnb_status == 0) |> 
+  mutate(eligibility_status = 1)
 
 
 #Create eligibility data set that only has one entry per cow per period with eligibiity status
-eligible_cows <- eligible_cows %>% 
+eligible_cows_gc <- eligible_cows %>% 
   filter(eligibility_status == 1) %>%
   select(id_animal_lact, period_number, period_start_date, period_end_date, eligibility_status) %>%
   group_by(id_animal_lact, period_number) %>%
@@ -318,6 +278,13 @@ eligible_cows <- eligible_cows %>%
   ) %>%
   distinct(id_animal_lact, period_number, .keep_all = TRUE) %>%
   ungroup()
+
+
+# Count eligible per period and lactation group
+eligibility_long <- eligible_cows_gc %>% 
+  mutate(lact_number = sub(".*_(\\d+)$", "\\1", id_animal_lact)) %>%  # Extract lact_number from id_animal_lact
+  group_by(period_number, lact_number) %>%  # Group by period_number and lactation group
+  summarise(total_eligible = n(), .groups = "drop")
 
 # Create eligibility Table
 eligible_cows_summary <- eligible_cows %>%
@@ -328,169 +295,178 @@ eligible_cows_summary <- eligible_cows %>%
   pivot_wider(names_from = lact_number, values_from = total_eligible_cows, values_fill = list(total_eligible_cows = 0)) %>%
   mutate(total = rowSums(select(., -period_number), na.rm = TRUE))  # Add total column
 
-animals_repro <- animals_repro %>% 
-  arrange(id_animal_lact, period_start_date)
+# merge back time periods
+time_periods <- eligible_cows |> 
+  select(period_number, period_start_date) |> 
+  distinct()
+
+# to find out how compares DC
+# last 2 windows is are to high and last one is not relevant
+# other seems ok or would be if DNB's were accounted for earlier
+eligible_no <- eligible_cows_summary |> 
+  left_join(time_periods) |> 
+  select(period_start_date, everything())
+
+
 
 #      *Number Pregnant Logic:*
 
-# need number of bred_events in repro_data that resulted in pregnancy, dynamically
-
 # Count the number of breedings that resulted in a pregnancy per period and lactation group
-pregnant_counts_by_period <- animals_repro %>%
-  filter(event == "BRED" & R %in% c("P", "A", "C")) %>%  # Only include breedings that resulted in pregnancy
-  mutate(lact_number = sub(".*_(\\d+)$", "\\1", id_animal_lact)) %>%  # Extract lact_number from id_animal_lact
-  group_by(period_number, lact_number) %>%  # Group by period_number and lactation group
-  summarise(total_pregnancies = n(), .groups = "drop")  # Count pregnancies per period and lactation group
-
-# Pivot the table to get lactation number as columns and total pregnancies as values
-pregnant_counts_table <- pregnant_counts_by_period %>%
-  pivot_wider(names_from = lact_number, values_from = total_pregnancies, values_fill = list(total_pregnancies = 0)) %>%  # Pivot to wide format
-  mutate(Total = rowSums(across()))  # Calculate total pregnancies across lactation groups  
-
-# Preg Risk Table
-eligible_cows_summary_trimmed <- eligible_cows_summary %>%
-  slice(1:(n() - 2))
-
-preg_risk_table <- pregnant_counts_table / eligible_cows_summary_trimmed
+pregnant_counts_by_period <- animals_repro_gc3 %>%
+  filter(event == "BRED" & R %in% c("P", "A", "C")) %>% 
+  mutate(lact_number = sub(".*_(\\d+)$", "\\1", id_animal_lact)) %>%  
+  group_by(period_number, period_start_date, lact_number) %>% 
+  summarise(total_pregnancies = n(), .groups = "drop") 
 
 
-preg_risk_table <- preg_risk_table %>%
-  mutate(across(where(is.numeric), 
-                ~ ifelse(is.na(.), "0%", paste0(round(.*100, 1), "%"))))
+
+preg_risk_long <- pregnant_counts_by_period %>%
+  inner_join(eligibility_long, by = c("period_number", "lact_number")) %>%
+  mutate(pregnancy_risk = total_pregnancies / total_eligible) %>%
+  replace_na(list(pregnancy_risk = 0))  # Ensure no NAs
 ```
 
-```{r}
-# conception rate over time
-```
-
-# Lameness
+21-Day PR
 
 ```{r}
-# Lameness events by DIM
 
-graph <- ggplot(lame_data, aes(x = dim_event)) +
-  geom_histogram(binwidth = 10, fill = "steelblue", color = "black", alpha = 0.7) +
-  theme_minimal(base_size = 14) +
-  facet_wrap(vars(event), ncol = 1, scales = "free") +
+
+# Create lact_group +3
+preg_risk_lact_group <- preg_risk_long %>%
+  mutate(
+    lact_group = case_when(
+      lact_number == 1 ~ "1",
+      lact_number == 2 ~ "2",
+      lact_number >= 3 ~ "3+"
+    )
+  ) %>%
+  group_by(period_number, period_start_date, lact_group) %>%
+  summarise(
+    total_pregnancies = sum(total_pregnancies, na.rm = TRUE),
+    total_eligible = sum(total_eligible, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(pregnancy_risk = total_pregnancies / total_eligible) %>%
+  replace_na(list(pregnancy_risk = 0)) 
+
+preg_risk_plot_data <- preg_risk_lact_group %>%
+  filter(lact_group == 1, period_start_date >= date_start, period_start_date <= date_end-21)
+
+lowest_points <- preg_risk_plot_data %>%
+  filter(pregnancy_risk == min(pregnancy_risk, na.rm = TRUE))
+
+ggplot(preg_risk_plot_data, aes(x = period_start_date, y = pregnancy_risk)) +
+  geom_line(color = "blue", size = 1) +  # Line plot
+  geom_point(color = "red", size = 2) +  # Points on line
+  geom_text(data = lowest_points, aes(label = period_start_date),
+            color = "black", size = 4, vjust = -1) +  # Adding labels to lowest points
   labs(
-    title = "Distribution of Lameness Events Over Days in Milk",
-    x = "Days in Milk",
-    y = "Count"
+    title = "Pregnancy Risk Over Time (Lactation 1)",
+    x = "Period Start Date",
+    y = "Pregnancy Risk (%)"
   ) +
-  theme(
-    panel.grid.major = element_line(color = "gray80"),
-    panel.grid.minor = element_blank(),
-    strip.text = element_text(size = 14, face = "bold")
-  )
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as %
+  theme_minimal()
 
-print(graph)
 ```
 
 ```{r}
-#| fig-height: 8
+preg_risk_plot_data <- preg_risk_lact_group %>%
+  filter(lact_group == 2, period_start_date >= date_start, period_start_date <= date_end-21)
 
-summarize_lame_events<-lame_data |> 
-  group_by(event, protocols_remaining_after_numbers1) |> 
-  summarize(count_rows=sum(n()))|>
-  ungroup()%>%
-  mutate(event_type = factor(protocols_remaining_after_numbers1), 
-         Event = factor(event),
-         event_type = if_else(is.na(event_type), "Trim Only", event_type))
+lowest_points <- preg_risk_plot_data %>%
+  filter(pregnancy_risk == min(pregnancy_risk, na.rm = TRUE))
 
-facet_order <- summarize_lame_events %>%
-  group_by(event_type) %>%
-  summarise(n_y = n_distinct(event)) %>%
-  arrange(desc(n_y)) %>%  # Order by most y categories
-  pull(event_type)
+ggplot(preg_risk_plot_data, aes(x = period_start_date, y = pregnancy_risk)) +
+  geom_line(color = "blue", size = 1) +  # Line plot
+  geom_point(color = "red", size = 2) +  # Points on line
+  geom_text(data = lowest_points, aes(label = period_start_date),
+            color = "black", size = 4, vjust = -1) +  # Adding labels to lowest points
+  labs(
+    title = "Pregnancy Risk Over Time (Lactation 2)",
+    x = "Period Start Date",
+    y = "Pregnancy Risk (%)"
+  ) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as %
+  theme_minimal()
+```
 
-# order events
-summarize_lame_events <- summarize_lame_events %>%
-  mutate(event_type = fct_reorder(event_type, count_rows, .fun = sum, .desc = FALSE)) 
+```{r}
+preg_risk_plot_data <- preg_risk_lact_group %>%
+  filter(lact_group == "3+", period_start_date >= date_start, period_start_date <= date_end-21)
 
-  ggplot(summarize_lame_events)+
-  geom_bar(aes(x = event_type,
-               y = count_rows, fill = event_type), stat = "identity")+
-  #facet_wrap(factor(event, levels = facet_order) ~., scales = 'free')+
-    facet_wrap(vars(event), ncol = 1, scales = "free")+
-  coord_flip()+
-  scale_fill_viridis_d()+
+lowest_points <- preg_risk_plot_data %>%
+  filter(pregnancy_risk == min(pregnancy_risk, na.rm = TRUE))
+
+ggplot(preg_risk_plot_data, aes(x = period_start_date, y = pregnancy_risk)) +
+  geom_line(color = "blue", size = 1) +  # Line plot
+  geom_point(color = "red", size = 2) +  # Points on line
+  geom_text(data = lowest_points, aes(label = period_start_date),
+            color = "black", size = 4, vjust = -1) +  # Adding labels to lowest points
+  labs(
+    title = "Pregnancy Risk Over Time (Lactation 3+)",
+    x = "Period Start Date",
+    y = "Pregnancy Risk (%)"
+  ) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as %
+  theme_minimal()
+```
+
+
+# GC alternative
+
+```{r}
+
+
+# Create lact_group +3
+preg_risk_lact_group <- preg_risk_long %>%
+  mutate(
+    lact_group = case_when(
+      lact_number == 1 ~ "1",
+      lact_number == 2 ~ "2",
+      lact_number >= 3 ~ "3+"
+    )
+  ) %>%
+  group_by(period_number, period_start_date, lact_group) %>%
+  summarise(
+    total_pregnancies = sum(total_pregnancies, na.rm = TRUE),
+    total_eligible = sum(total_eligible, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(pregnancy_risk = total_pregnancies / total_eligible) %>%
+  replace_na(list(pregnancy_risk = 0)) 
+
+preg_risk_plot_data <- preg_risk_lact_group %>%
+  filter(period_start_date >= date_start-43, period_start_date <= date_end-43)
+
+range <- range(preg_risk_plot_data$period_start_date)
+
+lowest_points <- preg_risk_plot_data %>%
+  filter(pregnancy_risk == min(pregnancy_risk, na.rm = TRUE))
+
+ggplot(preg_risk_plot_data, 
+       aes(x = period_start_date, y = pregnancy_risk,
+           colour = lact_group,
+           fill = lact_group)) +
+  geom_point()+
+  geom_smooth(alpha = 0.3)+
+  geom_text(data = lowest_points, aes(label = period_start_date),
+            color = "red", size = 4, vjust = -1) +  # Adding labels to lowest points
   theme_minimal()+
-  labs(x = "",
-       y = "Row Count")+
-  theme(legend.position = "none",
-        # axis.text.y = element_text(size = 6)
-  )
-```
-
-```{r}
-# Lameness events by DIM and event type
-library(dplyr)
-library(ggplot2)
-library(viridis)
-
-# Summarize data
-summarized_lame_events <- lame_data |> 
-  group_by(dim_event, event, protocols_remaining_after_numbers1) |> 
-  summarise(count_rows = n(), .groups = "drop") |> 
-  mutate(event_type = factor(protocols_remaining_after_numbers1),
-         event = factor(event),
-         event_type = if_else(is.na(event_type), "Trim Only", event_type))
-
-# Identify the top 5 most frequent event types
-top_5_events <- summarized_lame_events |> 
-  group_by(event_type) |> 
-  summarise(total_count = sum(count_rows)) |> 
-  arrange(desc(total_count)) |> 
-  slice_head(n = 5) |> 
-  pull(event_type)
-
-# Filter dataset to include only top 5 event types
-summarized_lame_events <- summarized_lame_events |> 
-  filter(event_type %in% top_5_events)
-
-# Plot stacked bar graph with 30-day tick marks on x-axis
-ggplot(summarized_lame_events, aes(x = dim_event, y = count_rows, fill = event_type)) +
-  geom_col(width = 14, position = "stack") +  # Use geom_col for numeric x-axis
-  scale_fill_viridis_d() +  # Colorblind-friendly palette
-  scale_x_continuous(breaks = seq(0, max(summarized_lame_events$dim_event), by = 60)) +  # Tick marks every 30 days
-  theme_minimal(base_size = 14) +
-  facet_wrap(vars(event), ncol = 1, scales = "free_y") +  # Separate facets for each event
   labs(
-    title = "Stacked Bar Graph of Lameness Events by Days in Milk",
-    x = "Days in Milk",
-    y = "Count of Events",
-    fill = "Event Type"
+    title = "Pregnancy Risk Over Time",
+    x = "",
+    y = "Pregnancy Risk (%)"
   ) +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for readability
-    panel.grid.major = element_line(color = "gray80", size = 0.3),  # Thinner grid lines
-    panel.grid.minor = element_blank(),  # Remove minor grid lines
-    strip.text = element_text(size = 14, face = "bold"),
-    legend.position = "right"
-  )
-
-```
-
-# Mastitis
-
-```{r}
-
-
-
-graph <- ggplot(mastitis_data, aes(x = dim_event)) +
-  geom_histogram(binwidth = 10, fill = "steelblue", color = "black", alpha = 0.7) +
-  theme_minimal(base_size = 14) +
-  facet_wrap(vars(event), ncol = 1, scales = "free") +
-  labs(
-    title = "Distribution of Mastitis Events Over Days in Milk",
-    x = "Days in Milk",
-    y = "Count"
-  ) +
-  theme(
-    panel.grid.major = element_line(color = "gray80"),
-    panel.grid.minor = element_blank(),
-    strip.text = element_text(size = 14, face = "bold")
-  )
-
-print(graph)
+  scale_x_date(date_breaks = "21 days",
+               date_labels = "%b %d",
+               limits = range)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +  # Format y-axis as %
+  scale_colour_viridis_d()+
+  scale_fill_viridis_d()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  guides(color = guide_legend(title = "Lactation Group",
+                              position = "bottom"),
+         fill = "none")
+ 
 ```
